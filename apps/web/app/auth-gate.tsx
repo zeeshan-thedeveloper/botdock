@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   authProvidersResponseSchema,
   oauthStartResponseSchema,
@@ -30,6 +30,8 @@ const defaultProviderStatuses: AuthProviderStatus[] = [
   { provider: 'github', configured: false },
 ];
 
+const authSessionStorageKey = 'botdock.oauth-session-ready';
+
 function getProviderName(provider: AuthProvider) {
   return providerCopy[provider].label.replace('Continue with ', '');
 }
@@ -53,16 +55,26 @@ function getAuthReturnState() {
   return null;
 }
 
-export function AuthGate() {
+export function AuthGate({ children }: { children?: ReactNode }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const [providers, setProviders] = useState<AuthProviderStatus[]>(defaultProviderStatuses);
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
   const [startingProvider, setStartingProvider] = useState<AuthProvider | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [authReturnState, setAuthReturnState] = useState<'success' | 'error' | null>(null);
+  const [hasCompletedAuth, setHasCompletedAuth] = useState(false);
 
   useEffect(() => {
-    setAuthReturnState(getAuthReturnState());
+    const nextAuthReturnState = getAuthReturnState();
+    setAuthReturnState(nextAuthReturnState);
+
+    if (nextAuthReturnState === 'success') {
+      window.localStorage.setItem(authSessionStorageKey, 'true');
+      setHasCompletedAuth(true);
+      return;
+    }
+
+    setHasCompletedAuth(window.localStorage.getItem(authSessionStorageKey) === 'true');
   }, []);
 
   useEffect(() => {
@@ -143,6 +155,10 @@ export function AuthGate() {
       setMessage('Could not start the sign-in flow. Try again in a moment.');
       setStartingProvider(null);
     }
+  }
+
+  if (hasCompletedAuth && children) {
+    return children;
   }
 
   return (
