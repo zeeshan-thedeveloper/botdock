@@ -14,11 +14,15 @@ import {
   Code2,
   CreditCard,
   Database,
+  ExternalLink,
   FileClock,
+  Filter,
   Globe2,
   Home,
   KeyRound,
   LifeBuoy,
+  MoreHorizontal,
+  Plus,
   MessageSquareText,
   Play,
   Search,
@@ -32,6 +36,7 @@ import {
   Badge,
   Button,
   DataTable,
+  EmptyState,
   IconButton,
   MetricCard,
   Panel,
@@ -45,6 +50,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TextInput,
 } from '@botdock/ui';
 import type { LucideIcon } from 'lucide-react';
 
@@ -262,6 +268,117 @@ const recentErrors = [
     count: '3 rows',
   },
 ];
+
+type BotStatus = 'Published' | 'Draft' | 'Processing' | 'Error' | 'Disabled';
+type BotFilter = 'All' | BotStatus;
+type BotSort = 'updated' | 'conversations' | 'name';
+
+type BotRow = {
+  id: string;
+  name: string;
+  description: string;
+  initials: string;
+  status: BotStatus;
+  environment: string;
+  knowledge: string;
+  conversations: number;
+  lastPublished: string;
+  updatedBy: string;
+  updatedAt: string;
+  error?: string;
+};
+
+const botRows: BotRow[] = [
+  {
+    id: 'bot_7f3a1',
+    name: 'Support Assistant',
+    description: 'Production customer support widget',
+    initials: 'SA',
+    status: 'Published',
+    environment: 'Production',
+    knowledge: '3 sources · 1,284 chunks',
+    conversations: 16204,
+    lastPublished: '2 days ago',
+    updatedBy: 'Jamie Doyle',
+    updatedAt: '24m ago',
+  },
+  {
+    id: 'bot_9c2d0',
+    name: 'Docs Assistant',
+    description: 'Answers API and SDK implementation questions',
+    initials: 'DA',
+    status: 'Processing',
+    environment: 'Staging',
+    knowledge: '7 sources · indexing',
+    conversations: 11850,
+    lastPublished: '6 days ago',
+    updatedBy: 'Mina Patel',
+    updatedAt: '41m ago',
+  },
+  {
+    id: 'bot_1aa84',
+    name: 'Sales Qualifier',
+    description: 'Routes high-intent leads to the revenue team',
+    initials: 'SQ',
+    status: 'Draft',
+    environment: 'Draft',
+    knowledge: '2 sources · 318 chunks',
+    conversations: 4302,
+    lastPublished: 'Not published',
+    updatedBy: 'Eli Stone',
+    updatedAt: '1h ago',
+  },
+  {
+    id: 'bot_5e9b7',
+    name: 'Internal Knowledge Bot',
+    description: 'Employee-facing policy and billing reference',
+    initials: 'IK',
+    status: 'Error',
+    environment: 'Preview',
+    knowledge: '4 sources · sync failed',
+    conversations: 924,
+    lastPublished: '12 days ago',
+    updatedBy: 'Noor Ali',
+    updatedAt: '2h ago',
+    error: 'Source sync failed',
+  },
+  {
+    id: 'bot_3d6ef',
+    name: 'Onboarding Helper',
+    description: 'Guides new accounts through workspace setup',
+    initials: 'OH',
+    status: 'Published',
+    environment: 'Production',
+    knowledge: '5 sources · 842 chunks',
+    conversations: 6120,
+    lastPublished: 'Yesterday',
+    updatedBy: 'Rae Kim',
+    updatedAt: '3h ago',
+  },
+  {
+    id: 'bot_8b440',
+    name: 'Churn Risk Triage',
+    description: 'Paused experiment for account health reviews',
+    initials: 'CR',
+    status: 'Disabled',
+    environment: 'Sandbox',
+    knowledge: '1 source · 96 chunks',
+    conversations: 288,
+    lastPublished: 'Last month',
+    updatedBy: 'Jamie Doyle',
+    updatedAt: '1d ago',
+  },
+];
+
+const botFilters: BotFilter[] = ['All', 'Published', 'Draft', 'Processing', 'Error', 'Disabled'];
+
+const botStatusTone: Record<BotStatus, 'neutral' | 'success' | 'danger' | 'info'> = {
+  Published: 'success',
+  Draft: 'neutral',
+  Processing: 'info',
+  Error: 'danger',
+  Disabled: 'neutral',
+};
 
 function getNavItem(id: string): NavItem {
   const navItem = navGroups.flatMap((group) => group.items).find((item) => item.id === id);
@@ -510,6 +627,250 @@ function OverviewDashboard() {
   );
 }
 
+function formatCount(value: number) {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function BotsEmptyState() {
+  return (
+    <EmptyState
+      title="No bots in this workspace"
+      description="Create the first bot to connect knowledge, test responses, and publish a production-ready assistant."
+      action={
+        <Button size="md">
+          <Plus className="size-4" aria-hidden="true" />
+          Create bot
+        </Button>
+      }
+    />
+  );
+}
+
+function BotsListScreen() {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<BotFilter>('All');
+  const [sortBy, setSortBy] = useState<BotSort>('updated');
+
+  const filteredBots = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return botRows
+      .filter((bot) => {
+        const matchesStatus = statusFilter === 'All' || bot.status === statusFilter;
+        const matchesQuery =
+          normalizedQuery.length === 0 ||
+          [bot.name, bot.id, bot.description, bot.environment, bot.updatedBy].some((value) =>
+            value.toLowerCase().includes(normalizedQuery),
+          );
+
+        return matchesStatus && matchesQuery;
+      })
+      .toSorted((first, second) => {
+        if (sortBy === 'name') {
+          return first.name.localeCompare(second.name);
+        }
+
+        if (sortBy === 'conversations') {
+          return second.conversations - first.conversations;
+        }
+
+        return botRows.indexOf(first) - botRows.indexOf(second);
+      });
+  }, [query, sortBy, statusFilter]);
+
+  const statusCounts = botRows.reduce<Record<BotFilter, number>>(
+    (counts, bot) => {
+      counts.All += 1;
+      counts[bot.status] += 1;
+
+      return counts;
+    },
+    { All: 0, Published: 0, Draft: 0, Processing: 0, Error: 0, Disabled: 0 },
+  );
+
+  if (botRows.length === 0) {
+    return <BotsEmptyState />;
+  }
+
+  return (
+    <div className="grid gap-4">
+      <Panel>
+        <PanelBody className="grid gap-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <TextInput
+                aria-label="Search bots"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search bots, IDs, owners, or environments..."
+                className="pl-9"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
+                <Filter className="size-3.5" aria-hidden="true" />
+                Status
+              </div>
+              {botFilters.map((filter) => (
+                <Button
+                  key={filter}
+                  variant={statusFilter === filter ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setStatusFilter(filter)}
+                  aria-pressed={statusFilter === filter}
+                >
+                  {filter}
+                  <span className="font-mono text-[10px] opacity-75">{statusCounts[filter]}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing <span className="font-medium text-foreground">{filteredBots.length}</span> of{' '}
+              <span className="font-medium text-foreground">{botRows.length}</span> bots
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                ['updated', 'Recently updated'],
+                ['conversations', 'Most conversations'],
+                ['name', 'Name'],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  variant={sortBy === value ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setSortBy(value as BotSort)}
+                  aria-pressed={sortBy === value}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </PanelBody>
+      </Panel>
+
+      {filteredBots.length > 0 ? (
+        <Panel>
+          <PanelHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <PanelTitle>Bot inventory</PanelTitle>
+              <PanelDescription>
+                Operational state, ownership, and publication freshness across workspace bots.
+              </PanelDescription>
+            </div>
+            <Button variant="secondary" size="sm">
+              Export CSV
+            </Button>
+          </PanelHeader>
+          <PanelBody className="p-0">
+            <DataTable wrapperClassName="rounded-none border-0">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bot</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Environment</TableHead>
+                  <TableHead>Knowledge</TableHead>
+                  <TableHead className="text-right">Conversations</TableHead>
+                  <TableHead>Last published</TableHead>
+                  <TableHead>Updated by</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <tbody>
+                {filteredBots.map((bot) => (
+                  <TableRow key={bot.id} className={bot.status === 'Error' ? 'bg-danger/5' : ''}>
+                    <TableCell className="min-w-64">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-raised font-mono text-[11px] font-semibold text-primary">
+                          {bot.initials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">{bot.name}</p>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                            {bot.id} · {bot.description}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
+                      {bot.error ? (
+                        <p className="mt-2 text-[11px] text-danger">{bot.error}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <span
+                          className={`size-1.5 rounded-full ${
+                            bot.environment === 'Production' ? 'bg-success' : 'bg-muted-foreground'
+                          }`}
+                        />
+                        {bot.environment}
+                      </span>
+                    </TableCell>
+                    <TableCell>{bot.knowledge}</TableCell>
+                    <TableCell className="text-right font-mono text-foreground">
+                      {formatCount(bot.conversations)}
+                    </TableCell>
+                    <TableCell>{bot.lastPublished}</TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="text-foreground">{bot.updatedBy}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{bot.updatedAt}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <IconButton aria-label={`Open ${bot.name}`} variant="ghost" size="sm">
+                          <ExternalLink className="size-4" aria-hidden="true" />
+                        </IconButton>
+                        <IconButton
+                          aria-label={`More actions for ${bot.name}`}
+                          variant="ghost"
+                          size="sm"
+                        >
+                          <MoreHorizontal className="size-4" aria-hidden="true" />
+                        </IconButton>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </tbody>
+            </DataTable>
+          </PanelBody>
+        </Panel>
+      ) : (
+        <EmptyState
+          title="No bots match these filters"
+          description="Adjust the search query or status filter to find bots in this workspace."
+          action={
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setQuery('');
+                setStatusFilter('All');
+              }}
+            >
+              Reset filters
+            </Button>
+          }
+        />
+      )}
+    </div>
+  );
+}
+
 export function AppShell() {
   const [activeItemId, setActiveItemId] = useState('overview');
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
@@ -664,6 +1025,8 @@ export function AppShell() {
 
               {activeItemId === 'overview' ? (
                 <OverviewDashboard />
+              ) : activeItemId === 'bots' ? (
+                <BotsListScreen />
               ) : (
                 <Panel>
                   <PanelBody className="grid gap-6 md:grid-cols-[1fr_320px]">
