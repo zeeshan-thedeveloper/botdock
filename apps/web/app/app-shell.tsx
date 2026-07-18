@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import {
   Activity,
+  ArrowLeft,
   BarChart3,
   Bell,
   BookOpen,
@@ -10,13 +11,16 @@ import {
   Boxes,
   ChevronDown,
   CheckCircle2,
+  Copy,
   CircleHelp,
   Code2,
   CreditCard,
   Database,
   ExternalLink,
   FileClock,
+  FileText,
   Filter,
+  GitBranch,
   Globe2,
   Home,
   KeyRound,
@@ -25,6 +29,7 @@ import {
   Plus,
   MessageSquareText,
   Play,
+  Rocket,
   Search,
   Settings,
   ShieldCheck,
@@ -46,6 +51,8 @@ import {
   PanelTitle,
   ProgressBar,
   StatusBadge,
+  Tab,
+  Tabs,
   TableCell,
   TableHead,
   TableHeader,
@@ -272,6 +279,15 @@ const recentErrors = [
 type BotStatus = 'Published' | 'Draft' | 'Processing' | 'Error' | 'Disabled';
 type BotFilter = 'All' | BotStatus;
 type BotSort = 'updated' | 'conversations' | 'name';
+type BotDetailTab =
+  | 'overview'
+  | 'configuration'
+  | 'knowledge'
+  | 'playground'
+  | 'conversations'
+  | 'analytics'
+  | 'deployments'
+  | 'settings';
 
 type BotRow = {
   id: string;
@@ -282,6 +298,11 @@ type BotRow = {
   environment: string;
   knowledge: string;
   conversations: number;
+  version: string;
+  resolutionRate: string;
+  feedbackRate: string;
+  estimatedCost: string;
+  errorRate: string;
   lastPublished: string;
   updatedBy: string;
   updatedAt: string;
@@ -298,6 +319,11 @@ const botRows: BotRow[] = [
     environment: 'Production',
     knowledge: '3 sources · 1,284 chunks',
     conversations: 16204,
+    version: 'v14',
+    resolutionRate: '91.8%',
+    feedbackRate: '94.1%',
+    estimatedCost: '$41.20',
+    errorRate: '0.04%',
     lastPublished: '2 days ago',
     updatedBy: 'Jamie Doyle',
     updatedAt: '24m ago',
@@ -311,6 +337,11 @@ const botRows: BotRow[] = [
     environment: 'Staging',
     knowledge: '7 sources · indexing',
     conversations: 11850,
+    version: 'v9',
+    resolutionRate: '88.2%',
+    feedbackRate: '90.7%',
+    estimatedCost: '$38.90',
+    errorRate: '0.11%',
     lastPublished: '6 days ago',
     updatedBy: 'Mina Patel',
     updatedAt: '41m ago',
@@ -324,6 +355,11 @@ const botRows: BotRow[] = [
     environment: 'Draft',
     knowledge: '2 sources · 318 chunks',
     conversations: 4302,
+    version: 'v3',
+    resolutionRate: '84.5%',
+    feedbackRate: '87.0%',
+    estimatedCost: '$12.70',
+    errorRate: '0.08%',
     lastPublished: 'Not published',
     updatedBy: 'Eli Stone',
     updatedAt: '1h ago',
@@ -337,6 +373,11 @@ const botRows: BotRow[] = [
     environment: 'Preview',
     knowledge: '4 sources · sync failed',
     conversations: 924,
+    version: 'v6',
+    resolutionRate: '72.4%',
+    feedbackRate: '74.8%',
+    estimatedCost: '$5.80',
+    errorRate: '2.80%',
     lastPublished: '12 days ago',
     updatedBy: 'Noor Ali',
     updatedAt: '2h ago',
@@ -351,6 +392,11 @@ const botRows: BotRow[] = [
     environment: 'Production',
     knowledge: '5 sources · 842 chunks',
     conversations: 6120,
+    version: 'v3',
+    resolutionRate: '89.6%',
+    feedbackRate: '91.2%',
+    estimatedCost: '$18.40',
+    errorRate: '0.06%',
     lastPublished: 'Yesterday',
     updatedBy: 'Rae Kim',
     updatedAt: '3h ago',
@@ -364,6 +410,11 @@ const botRows: BotRow[] = [
     environment: 'Sandbox',
     knowledge: '1 source · 96 chunks',
     conversations: 288,
+    version: 'v1',
+    resolutionRate: '68.0%',
+    feedbackRate: '71.5%',
+    estimatedCost: '$1.90',
+    errorRate: '0.00%',
     lastPublished: 'Last month',
     updatedBy: 'Jamie Doyle',
     updatedAt: '1d ago',
@@ -379,6 +430,53 @@ const botStatusTone: Record<BotStatus, 'neutral' | 'success' | 'danger' | 'info'
   Error: 'danger',
   Disabled: 'neutral',
 };
+
+const botDetailTabs: Array<{ id: BotDetailTab; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'configuration', label: 'Configuration' },
+  { id: 'knowledge', label: 'Knowledge' },
+  { id: 'playground', label: 'Playground' },
+  { id: 'conversations', label: 'Conversations' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'deployments', label: 'Deployments' },
+  { id: 'settings', label: 'Settings' },
+];
+
+const botRecentActivity = [
+  {
+    title: 'Published production version',
+    detail: 'v14 promoted after 240 sampled responses passed review.',
+    age: '2 days ago',
+    icon: Rocket,
+    tone: 'success' as const,
+  },
+  {
+    title: 'System instructions updated',
+    detail: 'Refund escalation path and invoice policy phrasing tightened.',
+    age: '3 days ago',
+    icon: GitBranch,
+    tone: 'primary' as const,
+  },
+  {
+    title: 'Knowledge source added',
+    detail: 'refund-policy.pdf indexed with 186 production-ready chunks.',
+    age: '4 days ago',
+    icon: FileText,
+    tone: 'info' as const,
+  },
+];
+
+const botDeploymentChecks = [
+  { label: 'Widget embed', detail: 'Active on docs.acme.com and app.acme.com', status: 'Live' },
+  { label: 'REST API', detail: '142 requests/day from production keys', status: 'Ready' },
+  { label: 'Preview channel', detail: 'v15 draft receiving internal traffic', status: 'Active' },
+];
+
+const botKnowledgeHealth = [
+  { label: 'Indexed chunks', value: '1,284', progress: 92 },
+  { label: 'Citation coverage', value: '96.2%', progress: 96 },
+  { label: 'Stale content risk', value: 'Low', progress: 18 },
+];
 
 function getNavItem(id: string): NavItem {
   const navItem = navGroups.flatMap((group) => group.items).find((item) => item.id === id);
@@ -646,7 +744,256 @@ function BotsEmptyState() {
   );
 }
 
-function BotsListScreen() {
+function BotAvatar({ bot, size = 'md' }: { bot: BotRow; size?: 'sm' | 'md' | 'lg' }) {
+  const sizeStyles = {
+    sm: 'size-9 text-[11px]',
+    md: 'size-11 text-xs',
+    lg: 'size-12 text-sm',
+  };
+
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-md border border-border bg-surface-raised font-mono font-semibold text-primary ${sizeStyles[size]}`}
+    >
+      {bot.initials}
+    </div>
+  );
+}
+
+function BotDetailOverview({ bot }: { bot: BotRow }) {
+  const detailMetrics = [
+    {
+      label: 'Conversations',
+      value: formatCount(bot.conversations),
+      trend: '+12.4%',
+      tone: 'success' as const,
+    },
+    { label: 'Resolution', value: bot.resolutionRate, trend: '+2.1 pt', tone: 'success' as const },
+    { label: 'Feedback', value: bot.feedbackRate, trend: '684 votes', tone: 'primary' as const },
+    { label: 'AI cost', value: bot.estimatedCost, trend: '68% budget', tone: 'warning' as const },
+    {
+      label: 'Errors',
+      value: bot.errorRate,
+      trend: bot.status === 'Error' ? 'review' : 'stable',
+      tone: bot.status === 'Error' ? ('danger' as const) : ('success' as const),
+    },
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {detailMetrics.map((metric) => (
+          <MetricCard key={metric.label} {...metric} />
+        ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Recent activity</PanelTitle>
+            <PanelDescription>
+              Operational changes and knowledge updates for this bot.
+            </PanelDescription>
+          </PanelHeader>
+          <PanelBody className="grid gap-3">
+            {botRecentActivity.map((activity) => {
+              const ActivityIcon = activity.icon;
+
+              return (
+                <div
+                  key={activity.title}
+                  className="flex gap-3 rounded-md border border-border bg-surface-raised p-3"
+                >
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+                    <ActivityIcon className="size-4 text-primary" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{activity.title}</p>
+                      <Badge tone={activity.tone}>{activity.age}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                      {activity.detail}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </PanelBody>
+        </Panel>
+
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Deployment status</PanelTitle>
+            <PanelDescription>Production surfaces currently serving {bot.name}.</PanelDescription>
+          </PanelHeader>
+          <PanelBody className="grid gap-3">
+            {botDeploymentChecks.map((deployment) => (
+              <div
+                key={deployment.label}
+                className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">{deployment.label}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{deployment.detail}</p>
+                </div>
+                <StatusBadge status={deployment.status} />
+              </div>
+            ))}
+          </PanelBody>
+        </Panel>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Knowledge health</PanelTitle>
+            <PanelDescription>{bot.knowledge} powering grounded answers.</PanelDescription>
+          </PanelHeader>
+          <PanelBody className="grid gap-4">
+            {botKnowledgeHealth.map((item) => (
+              <ProgressBar
+                key={item.label}
+                value={item.progress}
+                label={`${item.label} · ${item.value}`}
+              />
+            ))}
+          </PanelBody>
+        </Panel>
+
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Production readiness</PanelTitle>
+            <PanelDescription>
+              Guardrails, routing, and monitored channels for this bot.
+            </PanelDescription>
+          </PanelHeader>
+          <PanelBody>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {(
+                [
+                  ['Prompt guardrails', 'Strict sources only', 'Ready'],
+                  ['Escalation routing', 'Zendesk handoff', 'Live'],
+                  ['Fallback policy', 'Human review queue', 'Ready'],
+                ] as const
+              ).map(([label, detail, status]) => (
+                <div key={label} className="rounded-md border border-border bg-surface-raised p-4">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-sm font-semibold text-foreground">{detail}</p>
+                  <StatusBadge status={status} className="mt-3" />
+                </div>
+              ))}
+            </div>
+          </PanelBody>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
+  const tabLabel = botDetailTabs.find((item) => item.id === tab)?.label ?? 'Section';
+
+  return (
+    <Panel>
+      <PanelBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <PanelTitle>
+            {tabLabel} for {bot.name}
+          </PanelTitle>
+          <PanelDescription>
+            This tab is present for navigation continuity. Its full production UI is tracked in a
+            later task.
+          </PanelDescription>
+        </div>
+        <Badge tone="neutral">Placeholder</Badge>
+      </PanelBody>
+    </Panel>
+  );
+}
+
+function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
+  const [activeTab, setActiveTab] = useState<BotDetailTab>('overview');
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-4 border-b border-border pb-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex w-fit items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Bots
+          <span className="text-muted-foreground/60">/</span>
+          <span className="text-foreground">{bot.name}</span>
+        </button>
+
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 gap-3">
+            <BotAvatar bot={bot} size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+                  {bot.name}
+                </h1>
+                <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
+              </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {bot.description}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge tone="neutral" className="font-mono normal-case">
+                  {bot.id}
+                </Badge>
+                <span>{bot.environment}</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>{bot.version}</span>
+                <span className="text-muted-foreground/50">·</span>
+                <span>
+                  Updated {bot.updatedAt} by {bot.updatedBy}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="md">
+              <Play className="size-4" aria-hidden="true" />
+              Test
+            </Button>
+            <Button size="md">
+              <Rocket className="size-4" aria-hidden="true" />
+              Publish
+            </Button>
+            <IconButton aria-label={`Copy ${bot.name} bot ID`} variant="secondary" size="md">
+              <Copy className="size-4" aria-hidden="true" />
+            </IconButton>
+            <IconButton aria-label={`More actions for ${bot.name}`} variant="secondary" size="md">
+              <MoreHorizontal className="size-4" aria-hidden="true" />
+            </IconButton>
+          </div>
+        </div>
+
+        <Tabs className="overflow-x-auto">
+          {botDetailTabs.map((tab) => (
+            <Tab key={tab.id} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
+              {tab.label}
+            </Tab>
+          ))}
+        </Tabs>
+      </div>
+
+      {activeTab === 'overview' ? (
+        <BotDetailOverview bot={bot} />
+      ) : (
+        <BotDetailPlaceholder bot={bot} tab={activeTab} />
+      )}
+    </div>
+  );
+}
+
+function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<BotFilter>('All');
   const [sortBy, setSortBy] = useState<BotSort>('updated');
@@ -788,12 +1135,22 @@ function BotsListScreen() {
               </TableHeader>
               <tbody>
                 {filteredBots.map((bot) => (
-                  <TableRow key={bot.id} className={bot.status === 'Error' ? 'bg-danger/5' : ''}>
+                  <TableRow
+                    key={bot.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onOpenBot(bot.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onOpenBot(bot.id);
+                      }
+                    }}
+                    className={`cursor-pointer ${bot.status === 'Error' ? 'bg-danger/5' : ''}`}
+                  >
                     <TableCell className="min-w-64">
                       <div className="flex items-center gap-3">
-                        <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-raised font-mono text-[11px] font-semibold text-primary">
-                          {bot.initials}
-                        </div>
+                        <BotAvatar bot={bot} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate font-medium text-foreground">{bot.name}</p>
                           <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -831,13 +1188,22 @@ function BotsListScreen() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <IconButton aria-label={`Open ${bot.name}`} variant="ghost" size="sm">
+                        <IconButton
+                          aria-label={`Open ${bot.name}`}
+                          variant="ghost"
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpenBot(bot.id);
+                          }}
+                        >
                           <ExternalLink className="size-4" aria-hidden="true" />
                         </IconButton>
                         <IconButton
                           aria-label={`More actions for ${bot.name}`}
                           variant="ghost"
                           size="sm"
+                          onClick={(event) => event.stopPropagation()}
                         >
                           <MoreHorizontal className="size-4" aria-hidden="true" />
                         </IconButton>
@@ -873,7 +1239,12 @@ function BotsListScreen() {
 
 export function AppShell() {
   const [activeItemId, setActiveItemId] = useState('overview');
+  const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
+  const selectedBot = useMemo(
+    () => botRows.find((bot) => bot.id === selectedBotId) ?? null,
+    [selectedBotId],
+  );
   const ActiveIcon = activeItem.icon;
 
   return (
@@ -923,7 +1294,10 @@ export function AppShell() {
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => setActiveItemId(item.id)}
+                          onClick={() => {
+                            setActiveItemId(item.id);
+                            setSelectedBotId(null);
+                          }}
                           className={`flex items-center gap-2.5 rounded-md border px-2 py-2 text-left text-sm font-medium transition ${
                             isActive
                               ? 'border-border bg-surface-raised text-foreground'
@@ -995,38 +1369,47 @@ export function AppShell() {
 
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
-              <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-                    <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
-                    <span>Acme Corp workspace</span>
+              {selectedBot ? null : (
+                <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                      <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
+                      <span>Acme Corp workspace</span>
+                    </div>
+                    <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
+                      {activeItemId === 'overview' ? 'Good afternoon, Jamie' : activeItem.label}
+                    </h1>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      {activeItemId === 'overview'
+                        ? 'Acme Corp workspace · Production'
+                        : activeItem.description}
+                    </p>
                   </div>
-                  <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
-                    {activeItemId === 'overview' ? 'Good afternoon, Jamie' : activeItem.label}
-                  </h1>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    {activeItemId === 'overview'
-                      ? 'Acme Corp workspace · Production'
-                      : activeItem.description}
-                  </p>
-                </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="secondary" size="md">
-                    Last 30 days
-                    <ChevronDown className="size-4" aria-hidden="true" />
-                  </Button>
-                  <Button size="md">
-                    <Bot className="size-4" aria-hidden="true" />
-                    Create bot
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="md">
+                      Last 30 days
+                      <ChevronDown className="size-4" aria-hidden="true" />
+                    </Button>
+                    <Button size="md">
+                      <Bot className="size-4" aria-hidden="true" />
+                      Create bot
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {activeItemId === 'overview' ? (
+              {selectedBot ? (
+                <BotDetailScreen bot={selectedBot} onBack={() => setSelectedBotId(null)} />
+              ) : activeItemId === 'overview' ? (
                 <OverviewDashboard />
               ) : activeItemId === 'bots' ? (
-                <BotsListScreen />
+                <BotsListScreen
+                  onOpenBot={(botId) => {
+                    setActiveItemId('bots');
+                    setSelectedBotId(botId);
+                  }}
+                />
               ) : (
                 <Panel>
                   <PanelBody className="grid gap-6 md:grid-cols-[1fr_320px]">
