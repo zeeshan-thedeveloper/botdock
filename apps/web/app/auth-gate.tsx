@@ -146,48 +146,46 @@ export function AuthGate() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f7faf8] text-ink">
-      <section className="mx-auto grid min-h-screen w-full max-w-6xl items-center gap-10 px-6 py-10 lg:grid-cols-[1fr_420px]">
+    <main className="min-h-screen bg-background text-foreground">
+      <section className="mx-auto grid min-h-screen w-full max-w-6xl items-center gap-10 px-app-gutter py-section-y lg:grid-cols-[1fr_420px]">
         <div className="max-w-2xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-moss">BotDock</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-primary">BotDock</p>
           <h1 className="mt-4 text-4xl font-semibold leading-tight sm:text-5xl">
             Sign in to configure and publish your chatbot workspace.
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-[#4b5d52]">
+          <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground">
             Connect with an approved OAuth provider to manage bot drafts, knowledge sources, test
             conversations, and deploy embedded chat experiences.
           </p>
-          <div className="mt-8 grid gap-3 text-sm text-[#5a6f62] sm:grid-cols-3">
-            <div className="border-l-2 border-coral pl-3">Secure OAuth redirect flow</div>
-            <div className="border-l-2 border-moss pl-3">HTTP-only session cookies</div>
-            <div className="border-l-2 border-[#8bb7a0] pl-3">
-              No provider secrets in the browser
-            </div>
+          <div className="mt-8 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+            <div className="border-l-2 border-accent pl-3">Secure OAuth redirect flow</div>
+            <div className="border-l-2 border-primary pl-3">HTTP-only session cookies</div>
+            <div className="border-l-2 border-success pl-3">No provider secrets in the browser</div>
           </div>
         </div>
 
-        <section className="rounded-lg border border-[#dbe7df] bg-white p-6 shadow-sm">
-          <div className="border-b border-[#dbe7df] pb-5">
+        <section className="rounded-lg border border-border bg-surface/95 p-6 shadow-surface-md">
+          <div className="border-b border-border pb-5">
             <h2 className="text-xl font-semibold">Sign in</h2>
-            <p className="mt-2 text-sm leading-6 text-[#5a6f62]">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Choose a configured provider to continue to BotDock.
             </p>
           </div>
 
           {authReturnState === 'success' ? (
-            <div className="mt-5 rounded-md border border-[#b9ddc8] bg-mint px-4 py-3 text-sm text-[#244834]">
+            <div className="mt-5 rounded-md border border-success/40 bg-success-muted px-4 py-3 text-sm text-success">
               Sign-in completed. Your secure session is ready for the dashboard.
             </div>
           ) : null}
 
           {authReturnState === 'error' ? (
-            <div className="mt-5 rounded-md border border-[#ffc4ba] bg-[#fff2ef] px-4 py-3 text-sm text-[#7a3026]">
+            <div className="mt-5 rounded-md border border-danger/40 bg-danger-muted px-4 py-3 text-sm text-danger">
               Sign-in did not complete. Please try another provider.
             </div>
           ) : null}
 
           {message ? (
-            <div className="mt-5 rounded-md border border-[#f4d2a7] bg-[#fff8ed] px-4 py-3 text-sm text-[#745025]">
+            <div className="mt-5 rounded-md border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning">
               {message}
             </div>
           ) : null}
@@ -206,19 +204,19 @@ export function AuthGate() {
                   type="button"
                   disabled={isDisabled}
                   onClick={() => void startOAuth(providerStatus.provider)}
-                  className="flex min-h-20 w-full items-center justify-between rounded-md border border-[#dbe7df] bg-[#fbfdfb] px-4 py-3 text-left transition hover:border-moss hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex min-h-20 w-full items-center justify-between rounded-md border border-border bg-surface-raised px-4 py-3 text-left shadow-surface-sm transition hover:border-primary hover:bg-muted focus-visible:border-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span>
-                    <span className="block text-sm font-semibold text-ink">
+                    <span className="block text-sm font-semibold text-foreground">
                       {isStarting ? 'Starting...' : copy.label}
                     </span>
-                    <span className="mt-1 block text-sm text-[#5a6f62]">
+                    <span className="mt-1 block text-sm text-muted-foreground">
                       {providerStatus.configured
                         ? copy.description
                         : 'Provider credentials are missing in the API environment.'}
                     </span>
                   </span>
-                  <span className="ml-4 shrink-0 rounded-full border border-[#dbe7df] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-moss">
+                  <span className="ml-4 shrink-0 rounded-full border border-border bg-primary-muted px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
                     {statusLabel}
                   </span>
                 </button>
@@ -227,7 +225,7 @@ export function AuthGate() {
           </div>
 
           {isLoadingProviders ? (
-            <p className="mt-4 text-sm text-[#5a6f62]">Checking provider availability...</p>
+            <p className="mt-4 text-sm text-muted-foreground">Checking provider availability...</p>
           ) : null}
         </section>
       </section>
