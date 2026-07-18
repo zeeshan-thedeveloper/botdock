@@ -1,0 +1,38 @@
+{
+  "name": "botdock",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-tenant platform for configuring, deploying, embedding, and monitoring AI-powered chatbots.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up",
+    "docker:down": "docker compose down",
+    "db:generate": "pnpm --filter @botdock/database db:generate",
+    "db:migrate": "pnpm --filter @botdock/database db:migrate",
+    "db:studio": "pnpm --filter @botdock/database db:studio",
+    "db:seed": "pnpm --filter @botdock/database db:seed"
+  },
+  "devDependencies": {
+    "@botdock/eslint-config": "workspace:*",
+    "@botdock/typescript-config": "workspace:*",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

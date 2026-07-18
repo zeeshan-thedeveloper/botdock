@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrganisationRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum BotStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships OrganisationMember[]
+  botsCreated Bot[]                @relation("BotCreatedBy")
+
+  @@map("users")
+}
+
+model Organisation {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members OrganisationMember[]
+  bots    Bot[]
+
+  @@map("organisations")
+}
+
+model OrganisationMember {
+  id             String           @id @default(cuid())
+  organisationId String
+  userId         String
+  role           OrganisationRole @default(MEMBER)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+  @@index([userId])
+  @@map("organisation_members")
+}
+
+model Bot {
+  id             String    @id @default(cuid())
+  organisationId String
+  createdById    String
+  name           String
+  description    String?
+  status         BotStatus @default(DRAFT)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("BotCreatedBy", fields: [createdById], references: [id])
+
+  @@index([organisationId])
+  @@index([createdById])
+  @@map("bots")
+}

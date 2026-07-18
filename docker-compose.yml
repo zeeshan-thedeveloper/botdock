@@ -1,0 +1,116 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    image: botdock/api:local
+    container_name: botdock-api
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://botdock:botdock@postgres:5432/botdock?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5174
+      LOG_LEVEL: info
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/health | grep -q botdock-api']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+    image: botdock/web:local
+    container_name: botdock-web
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - '3000:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+
+  widget:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/widget.Dockerfile
+    image: botdock/widget:local
+    container_name: botdock-widget
+    ports:
+      - '5173:80'
+
+  demo-site:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/demo-site.Dockerfile
+      args:
+        VITE_BOTDOCK_WIDGET_URL: http://localhost:5173/botdock-widget.js
+        VITE_BOTDOCK_API_BASE_URL: http://localhost:4000
+    image: botdock/demo-site:local
+    container_name: botdock-demo-site
+    ports:
+      - '5174:80'
+    depends_on:
+      - widget
+      - api
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: botdock-postgres
+    environment:
+      POSTGRES_DB: botdock
+      POSTGRES_USER: botdock
+      POSTGRES_PASSWORD: botdock
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/docker/postgres-init.sql:/docker-entrypoint-initdb.d/001-postgres-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U botdock -d botdock']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: botdock-redis
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: botdock-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: botdock
+      MINIO_ROOT_PASSWORD: botdock-local-password
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  minio-data:
