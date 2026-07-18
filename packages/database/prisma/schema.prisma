@@ -19,17 +19,62 @@ enum BotStatus {
   ARCHIVED
 }
 
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String?
+  avatarUrl       String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   memberships OrganisationMember[]
   botsCreated Bot[]                @relation("BotCreatedBy")
+  identities  OAuthIdentity[]
+  sessions    AuthSession[]
 
   @@map("users")
+}
+
+model OAuthIdentity {
+  id                String        @id @default(cuid())
+  userId            String
+  provider          OAuthProvider
+  providerAccountId String
+  email             String
+  emailVerified     Boolean       @default(false)
+  profileUrl        String?
+  avatarUrl         String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@index([email])
+  @@map("oauth_identities")
+}
+
+model AuthSession {
+  id               String    @id @default(cuid())
+  userId           String
+  sessionTokenHash String    @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_sessions")
 }
 
 model Organisation {

@@ -38,6 +38,9 @@ importers:
       '@botdock/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@botdock/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@botdock/logger':
         specifier: workspace:*
         version: link:../../packages/logger

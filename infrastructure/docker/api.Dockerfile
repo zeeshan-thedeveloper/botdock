@@ -18,6 +18,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS builder
 COPY . .
 RUN pnpm db:generate
+RUN pnpm --filter @botdock/database build
 RUN pnpm --filter @botdock/config build
 RUN pnpm --filter @botdock/contracts build
 RUN pnpm --filter @botdock/logger build

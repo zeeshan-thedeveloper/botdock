@@ -28,6 +28,10 @@ Local Compose also starts PostgreSQL with pgvector, Redis, and MinIO.
 - `packages/config`: environment schemas.
 - `packages/logger`: structured JSON logger factory.
 
+## Authentication
+
+See `docs/architecture/authentication.md` for the OAuth/session foundation. Google and GitHub sign-in are planned as real provider integrations, with backend and frontend tasks kept separate.
+
 ## Multi-Tenancy
 
 Tenant-owned entities must be linked directly or indirectly to an organisation. The first schema includes `Organisation`, `OrganisationMember`, and `Bot` relationships so future repositories and services can require organisation scope.
