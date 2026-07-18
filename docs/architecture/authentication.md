@@ -15,7 +15,7 @@ BotDock authentication is designed as a backend-owned OAuth flow with secure HTT
 
 ## Providers
 
-Google OAuth is implemented as the first real provider. GitHub OAuth is planned next and should reuse the same state, user-linking, and session foundation.
+Google and GitHub OAuth are implemented as real providers. Both reuse the same signed state, user-linking, and session foundation.
 
 ## Frontend Contract
 
@@ -25,7 +25,7 @@ The dashboard auth UI should call:
 - `GET /auth/oauth/google/start`
 - `GET /auth/oauth/github/start`
 
-The Google start endpoint returns a provider authorization URL when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are configured. The GitHub start endpoint remains explicitly marked as not implemented until AUTH-003.
+Provider start endpoints return an authorization URL when their client ID and secret are configured. Missing credentials return `provider_not_configured` so the frontend can disable or annotate the provider button.
 
 ## Security Principles
 
@@ -53,3 +53,22 @@ Set:
 
 - `GOOGLE_OAUTH_CLIENT_ID`
 - `GOOGLE_OAUTH_CLIENT_SECRET`
+
+## GitHub Local Setup
+
+Use this callback URL in the GitHub OAuth app for normal local development:
+
+```text
+http://localhost:4000/auth/oauth/github/callback
+```
+
+When smoke-testing a temporary API port, add that callback too, for example:
+
+```text
+http://localhost:4100/auth/oauth/github/callback
+```
+
+Set:
+
+- `GITHUB_OAUTH_CLIENT_ID`
+- `GITHUB_OAUTH_CLIENT_SECRET`
