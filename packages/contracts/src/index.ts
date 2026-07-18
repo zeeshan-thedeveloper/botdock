@@ -37,7 +37,7 @@ export const oauthStartResponseSchema = z.object({
   provider: authProviderSchema,
   state: z.string(),
   authorizationUrl: z.string().url().nullable(),
-  status: z.literal('provider_not_implemented'),
+  status: z.enum(['ready', 'provider_not_configured', 'provider_not_implemented']),
 });
 
 export type OAuthStartResponse = z.infer<typeof oauthStartResponseSchema>;
