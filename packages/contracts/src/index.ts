@@ -33,6 +33,21 @@ export const authProvidersResponseSchema = z.object({
 
 export type AuthProvidersResponse = z.infer<typeof authProvidersResponseSchema>;
 
+export const authSessionUserSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  name: z.string().nullable(),
+  avatarUrl: z.string().url().nullable(),
+});
+
+export type AuthSessionUser = z.infer<typeof authSessionUserSchema>;
+
+export const authSessionResponseSchema = z.object({
+  user: authSessionUserSchema.nullable(),
+});
+
+export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
+
 export const oauthStartResponseSchema = z.object({
   provider: authProviderSchema,
   state: z.string(),

@@ -47,6 +47,8 @@ const defaultProviderStatuses: AuthProviderStatus[] = [
 ];
 
 const authSessionStorageKey = 'botdock.oauth-session-ready';
+const dashboardPath = '/';
+const loginPath = '/login';
 
 function getProviderName(provider: AuthProvider) {
   return providerCopy[provider].label.replace('Continue with ', '');
@@ -79,6 +81,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
   const [authReturnState, setAuthReturnState] = useState<'success' | 'error' | null>(null);
   const [hasCompletedAuth, setHasCompletedAuth] = useState(false);
+  const [hasResolvedAuth, setHasResolvedAuth] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showEmailPasswordError, setShowEmailPasswordError] = useState(false);
@@ -89,12 +92,31 @@ export function AuthGate({ children }: { children?: ReactNode }) {
 
     if (nextAuthReturnState === 'success') {
       window.localStorage.setItem(authSessionStorageKey, 'true');
+      if (!children) {
+        window.location.replace(dashboardPath);
+        return;
+      }
+
       setHasCompletedAuth(true);
+      setHasResolvedAuth(true);
       return;
     }
 
-    setHasCompletedAuth(window.localStorage.getItem(authSessionStorageKey) === 'true');
-  }, []);
+    const hasStoredSession = window.localStorage.getItem(authSessionStorageKey) === 'true';
+
+    if (children && !hasStoredSession) {
+      window.location.replace(loginPath);
+      return;
+    }
+
+    if (!children && hasStoredSession) {
+      window.location.replace(dashboardPath);
+      return;
+    }
+
+    setHasCompletedAuth(hasStoredSession);
+    setHasResolvedAuth(true);
+  }, [children]);
 
   useEffect(() => {
     let isMounted = true;
@@ -147,7 +169,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
     setMessage(null);
 
     try {
-      const redirectTo = new URL(window.location.href);
+      const redirectTo = new URL(dashboardPath, window.location.origin);
       redirectTo.searchParams.set('auth', 'success');
 
       const startUrl = new URL(`/auth/oauth/${provider}/start`, apiBaseUrl);
@@ -177,17 +199,27 @@ export function AuthGate({ children }: { children?: ReactNode }) {
   }
 
   function handlePasswordSignIn() {
-    setShowEmailPasswordError(!(email.trim() && password.trim()));
+    if (!email.trim() || !password.trim()) {
+      setShowEmailPasswordError(true);
+      return;
+    }
+
+    window.localStorage.setItem(authSessionStorageKey, 'true');
+    window.location.assign(dashboardPath);
   }
 
-  if (hasCompletedAuth && children) {
+  if (children && hasResolvedAuth && hasCompletedAuth) {
     return children;
   }
 
+  if (children || !hasResolvedAuth || hasCompletedAuth) {
+    return <main className="h-dvh overflow-hidden bg-background text-foreground" />;
+  }
+
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <section className="grid min-h-screen lg:grid-cols-[1.08fr_1fr]">
-        <aside className="relative hidden overflow-hidden border-r border-border bg-surface px-10 py-10 lg:flex lg:flex-col lg:justify-between xl:px-14 xl:py-14">
+    <main className="h-dvh overflow-hidden bg-background text-foreground">
+      <section className="grid h-full min-h-0 lg:grid-cols-[1.08fr_1fr]">
+        <aside className="relative hidden min-h-0 overflow-hidden border-r border-border bg-surface px-10 py-8 lg:flex lg:flex-col lg:justify-between xl:px-14">
           <div className="flex items-center gap-2.5">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
               B
@@ -195,7 +227,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
             <p className="text-[15px] font-semibold">BotDock</p>
           </div>
 
-          <div className="relative mx-auto flex min-h-[28rem] w-full max-w-[32rem] items-center justify-center">
+          <div className="relative mx-auto flex min-h-[22rem] w-full max-w-[32rem] items-center justify-center xl:min-h-[25rem]">
             <svg
               className="absolute inset-x-4 top-16 h-80 text-border"
               viewBox="0 0 420 320"
@@ -237,7 +269,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               <Badge tone="success">Published v14</Badge>
             </div>
 
-            <div className="absolute bottom-16 left-10 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
+            <div className="absolute bottom-10 left-10 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Braces className="size-3.5" aria-hidden="true" />
                 Knowledge
@@ -247,7 +279,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               </div>
             </div>
 
-            <div className="absolute bottom-20 right-6 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
+            <div className="absolute bottom-14 right-6 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <Rocket className="size-3.5" aria-hidden="true" />
                 Deploy
@@ -260,7 +292,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
           </div>
 
           <div>
-            <h1 className="max-w-md text-2xl font-semibold leading-tight">
+            <h1 className="max-w-md text-xl font-semibold leading-tight xl:text-2xl">
               Every bot, source, and deployment connected in one dock.
             </h1>
             <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">
@@ -269,9 +301,9 @@ export function AuthGate({ children }: { children?: ReactNode }) {
           </div>
         </aside>
 
-        <div className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-10">
+        <div className="flex min-h-0 items-center justify-center overflow-hidden px-5 py-5 sm:px-8 lg:px-10">
           <section className="w-full max-w-[23rem]">
-            <div className="mb-10 flex items-center gap-2.5 lg:hidden">
+            <div className="mb-6 flex items-center gap-2.5 lg:hidden">
               <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
                 B
               </div>
@@ -280,26 +312,26 @@ export function AuthGate({ children }: { children?: ReactNode }) {
 
             <div>
               <h2 className="text-xl font-semibold">Sign in to your workspace</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
                 Welcome back. Pick up where you left off.
               </p>
             </div>
 
             {authReturnState === 'error' ? (
-              <div className="mt-6 flex items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-4 py-3 text-sm text-danger">
+              <div className="mt-4 flex items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-4 py-3 text-sm text-danger">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>Sign-in did not complete. Please try another provider.</span>
               </div>
             ) : null}
 
             {message ? (
-              <div className="mt-6 flex items-start gap-3 rounded-md border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning">
+              <div className="mt-4 flex items-start gap-3 rounded-md border border-warning/40 bg-warning-muted px-4 py-3 text-sm text-warning">
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{message}</span>
               </div>
             ) : null}
 
-            <div className="mt-7 grid gap-2.5">
+            <div className="mt-5 grid gap-2.5">
               {providers.map((providerStatus) => {
                 const copy = providerCopy[providerStatus.provider];
                 const isStarting = startingProvider === providerStatus.provider;
@@ -340,7 +372,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               </p>
             ) : null}
 
-            <div className="my-6 flex items-center gap-3">
+            <div className="my-4 flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
               <span className="text-[11px] font-semibold uppercase text-muted-foreground/70">
                 or
@@ -348,7 +380,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               <div className="h-px flex-1 bg-border" />
             </div>
 
-            <div className="grid gap-4">
+            <div className="grid gap-3">
               <Field label="Email">
                 <div className="relative">
                   <Mail
@@ -406,17 +438,17 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               </Button>
             </div>
 
-            <p className="mt-6 text-center text-sm text-muted-foreground">
+            <p className="mt-4 text-center text-sm text-muted-foreground">
               Don&apos;t have an account?{' '}
               <button type="button" className="font-medium text-primary hover:text-primary/80">
                 Create one
               </button>
             </p>
-            <p className="mt-6 text-center text-xs leading-5 text-muted-foreground/70">
+            <p className="mt-2 text-center text-xs leading-5 text-muted-foreground/70">
               By continuing you agree to the Terms of Service and Privacy Policy.
             </p>
 
-            <div className="mt-8 grid gap-2 rounded-lg border border-border bg-surface/70 p-4 text-xs leading-5 text-muted-foreground">
+            <div className="mt-3 grid gap-1.5 rounded-lg border border-border bg-surface/70 p-3 text-xs leading-5 text-muted-foreground">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="size-4 text-success" aria-hidden="true" />
                 OAuth redirects stay handled by the BotDock API.

@@ -11,24 +11,43 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import type { AuthProvider, AuthProvidersResponse, OAuthStartResponse } from '@botdock/contracts';
+import type {
+  AuthProvider,
+  AuthProvidersResponse,
+  AuthSessionResponse,
+  OAuthStartResponse,
+} from '@botdock/contracts';
 import { authProviderSchema } from '@botdock/contracts';
 import type { Request, Response } from 'express';
+import { PrismaService } from '../database/prisma.service.js';
 import { AuthService } from './auth.service.js';
 import { readCookie, serializeCookie } from './cookie.utils.js';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private readonly authService: AuthService,
-    private readonly configService: ConfigService,
-  ) {}
+  private readonly authService: AuthService;
+  private readonly configService: ConfigService;
+
+  constructor(authService?: AuthService, configService?: ConfigService) {
+    const resolvedConfigService = configService ?? AuthController.createFallbackConfigService();
+
+    this.authService = authService ?? new AuthService(resolvedConfigService, new PrismaService());
+    this.configService = resolvedConfigService;
+  }
 
   @Get('providers')
   @ApiOkResponse({ description: 'Configured authentication providers.' })
   listProviders(): AuthProvidersResponse {
     return this.authService.listProviders();
+  }
+
+  @Get('session')
+  @ApiOkResponse({ description: 'Current authenticated user session.' })
+  getSession(@Req() request: Request): Promise<AuthSessionResponse> {
+    return this.authService.getSessionUser(
+      readCookie(request, this.configService.getOrThrow<string>('AUTH_COOKIE_NAME')),
+    );
   }
 
   @Get('oauth/:provider/start')
@@ -129,5 +148,13 @@ export class AuthController {
     }
 
     return parsed.data;
+  }
+
+  private static createFallbackConfigService() {
+    return new ConfigService({
+      ...process.env,
+      AUTH_COOKIE_SECURE: process.env.AUTH_COOKIE_SECURE === 'true',
+      AUTH_COOKIE_SAME_SITE: process.env.AUTH_COOKIE_SAME_SITE ?? 'lax',
+    });
   }
 }
