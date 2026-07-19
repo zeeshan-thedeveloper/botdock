@@ -583,6 +583,10 @@ type BotConfiguration = {
   humanHandoff: boolean;
 };
 
+export function areBotConfigurationsEqual(left: BotConfiguration, right: BotConfiguration) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function getBotConfiguration(bot: BotRow): BotConfiguration {
   return {
     name: bot.name,
@@ -1074,11 +1078,15 @@ function BotDetailConfiguration({
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
   const [config, setConfig] = useState<BotConfiguration>(initialConfig);
+  const [savedConfig, setSavedConfig] = useState<BotConfiguration>(initialConfig);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [didLoadCredentials, setDidLoadCredentials] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<ProviderCredentialsMessage | null>(null);
-  const hasUnsavedChanges = JSON.stringify(config) !== JSON.stringify(initialConfig);
+  const savedConfigRef = useRef(savedConfig);
+  const activeBotIdRef = useRef(bot.id);
+  const hasUnsavedChanges = !areBotConfigurationsEqual(config, savedConfig);
   const activeCredentials = credentials.filter((credential) => credential.status === 'active');
   const selectedCredential =
     activeCredentials.find((credential) => credential.id === config.providerCredentialId) ?? null;
@@ -1099,8 +1107,23 @@ function BotDetailConfiguration({
   ];
 
   useEffect(() => {
-    setConfig(initialConfig);
-  }, [initialConfig]);
+    savedConfigRef.current = savedConfig;
+  }, [savedConfig]);
+
+  useEffect(() => {
+    const botChanged = activeBotIdRef.current !== bot.id;
+    const previousSavedConfig = savedConfigRef.current;
+
+    activeBotIdRef.current = bot.id;
+    setSavedConfig(initialConfig);
+    setConfig((currentConfig) => {
+      if (botChanged || areBotConfigurationsEqual(currentConfig, previousSavedConfig)) {
+        return initialConfig;
+      }
+
+      return currentConfig;
+    });
+  }, [bot.id, initialConfig]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1131,9 +1154,11 @@ function BotDetailConfiguration({
 
         if (isMounted) {
           setCredentials(payload.credentials);
+          setDidLoadCredentials(true);
         }
       } catch (error) {
         if (isMounted) {
+          setDidLoadCredentials(false);
           setSaveMessage({
             tone: 'danger',
             text: error instanceof Error ? error.message : 'Could not load provider credentials.',
@@ -1153,11 +1178,30 @@ function BotDetailConfiguration({
     };
   }, [apiBaseUrl]);
 
+  useEffect(() => {
+    if (!didLoadCredentials || isLoadingCredentials || !config.providerCredentialId) {
+      return;
+    }
+
+    if (activeCredentials.some((credential) => credential.id === config.providerCredentialId)) {
+      return;
+    }
+
+    setConfig((currentConfig) => ({ ...currentConfig, providerCredentialId: null }));
+    setSaveMessage({
+      tone: 'warning',
+      text: 'The saved provider key is no longer active. Choose a new key before publishing.',
+    });
+  }, [activeCredentials, config.providerCredentialId, didLoadCredentials, isLoadingCredentials]);
+
   function updateConfig<Key extends keyof BotConfiguration>(
     key: Key,
     value: BotConfiguration[Key],
   ) {
     setConfig((current) => ({ ...current, [key]: value }));
+    setSaveMessage((currentMessage) =>
+      currentMessage?.tone === 'success' ? null : currentMessage,
+    );
   }
 
   async function saveConfiguration() {
@@ -1215,6 +1259,9 @@ function BotDetailConfiguration({
 
       const updatedBot = botSchema.parse(await response.json());
       onBotUpdated(updatedBot);
+      const updatedConfig = getBotConfiguration(toBotRow(updatedBot));
+      setSavedConfig(updatedConfig);
+      setConfig(updatedConfig);
       setSaveMessage({ tone: 'success', text: 'Draft configuration saved.' });
     } catch (error) {
       setSaveMessage({
@@ -1227,10 +1274,10 @@ function BotDetailConfiguration({
   }
 
   return (
-    <div className="grid gap-4 pb-20 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
+    <div className="grid gap-4 pb-24 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
       <div className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
         <Panel className="h-fit lg:sticky lg:top-20">
-          <PanelBody className="grid gap-1 p-2">
+          <PanelBody className="flex gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
             {configurationPanels.map((item) => {
               const Icon = item.icon;
               const isActive = activePanel === item.id;
@@ -1241,7 +1288,7 @@ function BotDetailConfiguration({
                   type="button"
                   aria-pressed={isActive}
                   onClick={() => onPanelChange(item.id)}
-                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition ${
+                  className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition lg:w-full ${
                     isActive
                       ? 'border-primary/40 bg-primary-muted text-primary'
                       : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -1481,7 +1528,7 @@ function BotDetailConfiguration({
                     ))}
                   </SelectInput>
                 </Field>
-                <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
+                <div className="min-w-0 rounded-md border border-border bg-surface-raised p-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Save state</span>
                     <Badge tone={hasUnsavedChanges ? 'warning' : 'success'}>
@@ -1631,7 +1678,10 @@ function BotDetailConfiguration({
                 variant="ghost"
                 size="md"
                 disabled={!hasUnsavedChanges}
-                onClick={() => setConfig(initialConfig)}
+                onClick={() => {
+                  setConfig(savedConfig);
+                  setSaveMessage(null);
+                }}
               >
                 <RotateCcw className="size-4" aria-hidden="true" />
                 Reset draft
@@ -1642,7 +1692,7 @@ function BotDetailConfiguration({
       </div>
 
       {hasUnsavedChanges ? (
-        <div className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-5xl flex-col gap-3 rounded-lg border border-warning/60 bg-surface-raised p-3 shadow-surface-md sm:flex-row sm:items-center sm:justify-between">
+        <div className="fixed inset-x-2 bottom-2 z-30 mx-auto flex max-w-5xl flex-col gap-3 rounded-lg border border-warning/60 bg-surface-raised p-3 shadow-surface-md sm:inset-x-4 sm:bottom-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning">
               <SlidersHorizontal className="size-4" aria-hidden="true" />
@@ -1653,7 +1703,14 @@ function BotDetailConfiguration({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setConfig(initialConfig)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setConfig(savedConfig);
+                setSaveMessage(null);
+              }}
+            >
               Reset
             </Button>
             <Button variant="secondary" size="sm">
@@ -3217,6 +3274,7 @@ function CreateBotModal({
     ? modelOptionsByProvider[selectedCredential.provider]
     : modelOptionsByProvider.openai;
   const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+  const createDisabled = isSaving || isLoadingCredentials || !name.trim();
 
   useEffect(() => {
     let isMounted = true;
@@ -3279,8 +3337,8 @@ function CreateBotModal({
       return;
     }
 
-    if (!name.trim() || !providerCredentialId) {
-      setMessage({ tone: 'warning', text: 'Add a name and active provider credential.' });
+    if (!name.trim()) {
+      setMessage({ tone: 'warning', text: 'Add a bot name before creating the draft.' });
       return;
     }
 
@@ -3366,7 +3424,17 @@ function CreateBotModal({
                 <SelectInput
                   value={providerCredentialId ?? ''}
                   disabled={modelSelectionDisabled}
-                  onChange={(event) => setProviderCredentialId(event.target.value || null)}
+                  onChange={(event) => {
+                    const nextCredential =
+                      activeCredentials.find(
+                        (credential) => credential.id === event.target.value,
+                      ) ?? null;
+                    setProviderCredentialId(nextCredential?.id ?? null);
+
+                    if (nextCredential) {
+                      setModel(modelOptionsByProvider[nextCredential.provider][0] ?? model);
+                    }
+                  }}
                 >
                   <option value="">
                     {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
@@ -3390,7 +3458,9 @@ function CreateBotModal({
 
             {activeCredentials.length === 0 && !isLoadingCredentials ? (
               <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                <span>Add and validate a provider key before choosing a model.</span>
+                <span>
+                  Create a draft now, then add a validated provider key before publishing.
+                </span>
                 <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
                   <KeyRound className="size-4" aria-hidden="true" />
                   Model Providers
@@ -3482,7 +3552,7 @@ function CreateBotModal({
               <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSaving || modelSelectionDisabled}>
+              <Button type="submit" disabled={createDisabled}>
                 {isSaving ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (

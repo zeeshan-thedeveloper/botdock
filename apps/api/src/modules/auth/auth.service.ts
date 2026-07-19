@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type {
@@ -22,7 +22,9 @@ const GITHUB_EMAILS_URL = 'https://api.github.com/user/emails';
 @Injectable()
 export class AuthService {
   constructor(
+    @Inject(ConfigService)
     private readonly configService: ConfigService,
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
   ) {}
 

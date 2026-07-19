@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -29,8 +30,11 @@ type StoredCredential = {
 @Injectable()
 export class ProviderCredentialsService {
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(ProviderCredentialCryptoService)
     private readonly cryptoService: ProviderCredentialCryptoService,
+    @Inject(ProviderKeyValidatorService)
     private readonly validatorService: ProviderKeyValidatorService,
   ) {}
 
