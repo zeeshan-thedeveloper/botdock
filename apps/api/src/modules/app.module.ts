@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LoggerModule } from './logger/logger.module.js';
+import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { LoggerModule } from './logger/logger.module.js';
     LoggerModule,
     DatabaseModule,
     AuthModule,
+    ProviderCredentialsModule,
     HealthModule,
   ],
 })

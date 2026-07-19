@@ -24,6 +24,16 @@ enum OAuthProvider {
   GITHUB
 }
 
+enum ModelProvider {
+  OPENAI
+  ANTHROPIC
+}
+
+enum ProviderCredentialStatus {
+  ACTIVE
+  INVALID
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
@@ -33,10 +43,11 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  memberships OrganisationMember[]
-  botsCreated Bot[]                @relation("BotCreatedBy")
-  identities  OAuthIdentity[]
-  sessions    AuthSession[]
+  memberships                OrganisationMember[]
+  botsCreated                Bot[]                @relation("BotCreatedBy")
+  identities                 OAuthIdentity[]
+  sessions                   AuthSession[]
+  providerCredentialsCreated ProviderCredential[] @relation("ProviderCredentialCreatedBy")
 
   @@map("users")
 }
@@ -84,8 +95,9 @@ model Organisation {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members OrganisationMember[]
-  bots    Bot[]
+  members             OrganisationMember[]
+  bots                Bot[]
+  providerCredentials ProviderCredential[]
 
   @@map("organisations")
 }
@@ -122,4 +134,26 @@ model Bot {
   @@index([organisationId])
   @@index([createdById])
   @@map("bots")
+}
+
+model ProviderCredential {
+  id              String                   @id @default(cuid())
+  organisationId  String
+  provider        ModelProvider
+  label           String
+  encryptedSecret String
+  last4           String
+  status          ProviderCredentialStatus @default(INVALID)
+  createdById     String
+  lastValidatedAt DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("ProviderCredentialCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([organisationId, provider, label])
+  @@index([organisationId])
+  @@index([createdById])
+  @@map("provider_credentials")
 }
