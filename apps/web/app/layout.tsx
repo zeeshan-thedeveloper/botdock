@@ -6,10 +6,22 @@ export const metadata: Metadata = {
   description: 'Configure, publish, and observe embeddable AI chatbots.',
 };
 
+const themeScript = `
+try {
+  const storedTheme = window.localStorage.getItem('botdock.theme');
+  document.documentElement.dataset.theme = storedTheme === 'light' ? 'light' : 'dark';
+} catch {
+  document.documentElement.dataset.theme = 'dark';
+}
+`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

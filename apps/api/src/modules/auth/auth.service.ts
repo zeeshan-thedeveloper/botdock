@@ -1,7 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { AuthProvider, AuthProvidersResponse, OAuthStartResponse } from '@botdock/contracts';
+import type {
+  AuthProvider,
+  AuthProvidersResponse,
+  AuthSessionResponse,
+  OAuthStartResponse,
+} from '@botdock/contracts';
 import { PrismaService } from '../database/prisma.service.js';
 import type { OAuthCallbackResult, OAuthProfile, OAuthStatePayload } from './auth.types.js';
 
@@ -33,6 +38,38 @@ export class AuthService {
           configured: this.isGitHubConfigured(),
         },
       ],
+    };
+  }
+
+  async getSessionUser(sessionToken: string | undefined): Promise<AuthSessionResponse> {
+    if (!sessionToken) {
+      return { user: null };
+    }
+
+    const session = await this.prisma.authSession.findFirst({
+      where: {
+        sessionTokenHash: this.hash(sessionToken),
+        revokedAt: null,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!session) {
+      return { user: null };
+    }
+
+    return {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+        avatarUrl: session.user.avatarUrl,
+      },
     };
   }
 
