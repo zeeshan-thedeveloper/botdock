@@ -92,6 +92,12 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+[data-theme='light'] body {
+  background:
+    radial-gradient(circle at top left, hsl(var(--color-primary) / 0.16), transparent 34rem),
+    linear-gradient(180deg, hsl(150 38% 98%), hsl(var(--color-background)));
+}
+
 ::selection {
   background: hsl(var(--color-primary) / 0.28);
   color: hsl(var(--color-foreground));

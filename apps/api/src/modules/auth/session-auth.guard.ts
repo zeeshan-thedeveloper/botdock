@@ -1,14 +1,15 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { createHash } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service.js';
+import { AuthService } from './auth.service.js';
 import { readCookie } from './cookie.utils.js';
 import type { AuthenticatedRequest } from './current-user.decorator.js';
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
   constructor(
+    private readonly authService: AuthService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {}
@@ -19,41 +20,28 @@ export class SessionAuthGuard implements CanActivate {
       request,
       this.configService.getOrThrow<string>('AUTH_COOKIE_NAME'),
     );
+    const session = await this.authService.getSessionUser(sessionToken);
 
-    if (!sessionToken) {
+    if (!session.user) {
       throw new UnauthorizedException('Authentication is required.');
     }
 
-    const session = await this.prisma.authSession.findFirst({
-      where: {
-        sessionTokenHash: this.hash(sessionToken),
-        revokedAt: null,
-        expiresAt: {
-          gt: new Date(),
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            avatarUrl: true,
-          },
-        },
+    const user = await this.prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
       },
     });
 
-    if (!session) {
+    if (!user) {
       throw new UnauthorizedException('Authentication is required.');
     }
 
-    request.user = session.user;
+    request.user = user;
 
     return true;
-  }
-
-  private hash(value: string) {
-    return createHash('sha256').update(value).digest('hex');
   }
 }

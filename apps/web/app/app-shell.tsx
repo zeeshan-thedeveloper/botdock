@@ -1,56 +1,56 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import {
+  authSessionResponseSchema,
+  providerCredentialSchema,
+  providerCredentialsResponseSchema,
+  type AuthSessionUser,
+  type ModelProvider,
+  type ProviderCredential,
+} from '@botdock/contracts';
 import {
   Activity,
   AlertCircle,
   ArrowLeft,
   BarChart3,
-  Bell,
+  Brain,
   BookOpen,
   Bot,
   Boxes,
   ChevronDown,
   CheckCircle2,
   Copy,
-  CircleHelp,
-  Code2,
-  CreditCard,
-  Database,
   EyeOff,
   ExternalLink,
-  FileClock,
   FileText,
   Filter,
-  GitBranch,
-  Globe2,
   Home,
   KeyRound,
-  LifeBuoy,
   Loader2,
+  LogOut,
   MoreHorizontal,
+  Moon,
   Plus,
   MessageSquareText,
-  RefreshCw,
   Play,
+  RefreshCw,
+  RotateCcw,
   Rocket,
+  Save,
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
+  Sun,
   Trash2,
   TriangleAlert,
-  Users,
-  Webhook,
 } from 'lucide-react';
-import {
-  providerCredentialSchema,
-  providerCredentialsResponseSchema,
-  type ModelProvider,
-  type ProviderCredential,
-} from '@botdock/contracts';
 import {
   Badge,
   Button,
+  CodeBlock,
   DataTable,
   EmptyState,
   Field,
@@ -69,6 +69,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TextArea,
   TextInput,
 } from '@botdock/ui';
 import type { LucideIcon } from 'lucide-react';
@@ -85,15 +86,26 @@ type NavGroup = {
   items: NavItem[];
 };
 
+type AppTheme = 'dark' | 'light';
+
+const themeStorageKey = 'botdock.theme';
+const authSessionStorageKey = 'botdock.oauth-session-ready';
+const fallbackUser: AuthSessionUser = {
+  id: 'local-placeholder',
+  email: 'user@botdock.local',
+  name: 'BotDock user',
+  avatarUrl: null,
+};
+
 const navGroups: NavGroup[] = [
   {
-    title: 'Workspace',
+    title: 'BotDock',
     items: [
       {
         id: 'overview',
         label: 'Overview',
         icon: Home,
-        description: 'Workspace health, setup progress, and recent activity.',
+        description: 'Account health, setup progress, and recent activity.',
       },
       {
         id: 'bots',
@@ -164,59 +176,24 @@ const navGroups: NavGroup[] = [
         icon: KeyRound,
         description: 'Scoped API keys and rotation workflows.',
       },
-      {
-        id: 'domains',
-        label: 'Allowed Domains',
-        icon: Globe2,
-        description: 'Production and preview embed allowlists.',
-      },
-      {
-        id: 'integration',
-        label: 'SDK & Integration',
-        icon: Code2,
-        description: 'Install snippets, REST API details, and widget setup.',
-      },
-      {
-        id: 'webhooks',
-        label: 'Webhooks',
-        icon: Webhook,
-        description: 'Delivery endpoints, event filters, and retries.',
-      },
-    ],
-  },
-  {
-    title: 'Account',
-    items: [
-      {
-        id: 'team',
-        label: 'Team',
-        icon: Users,
-        description: 'Members, roles, invites, and access controls.',
-      },
-      {
-        id: 'billing',
-        label: 'Usage & Billing',
-        icon: CreditCard,
-        description: 'Plan limits, invoices, usage, and workspace spend.',
-      },
-      {
-        id: 'settings',
-        label: 'Settings',
-        icon: Settings,
-        description: 'Organisation profile, defaults, and compliance controls.',
-      },
     ],
   },
 ];
 
 const defaultNavItem = navGroups[0]?.items[0];
+const settingsNavItem: NavItem = {
+  id: 'settings',
+  label: 'Settings',
+  icon: Settings,
+  description: 'Account preferences and local session controls.',
+};
 
 const overviewMetrics = [
-  { label: 'Active bots', value: '12', trend: '+2 this month', tone: 'success' as const },
-  { label: 'Conversations', value: '8,204', trend: '+14.2%', tone: 'success' as const },
-  { label: 'Messages', value: '41,930', trend: '+6.1%', tone: 'primary' as const },
-  { label: 'Positive feedback', value: '92.4%', trend: '+1.8 pt', tone: 'success' as const },
-  { label: 'Est. AI cost', value: '$284.10', trend: '62% budget', tone: 'warning' as const },
+  { label: 'Active bots', value: '0', trend: '0 this month', tone: 'neutral' as const },
+  { label: 'Conversations', value: '0', trend: '0%', tone: 'neutral' as const },
+  { label: 'Messages', value: '0', trend: '0%', tone: 'neutral' as const },
+  { label: 'Positive feedback', value: '0%', trend: '0 pt', tone: 'neutral' as const },
+  { label: 'Est. AI cost', value: '$0.00', trend: '0% budget', tone: 'neutral' as const },
 ];
 
 const botUsage = [
@@ -224,74 +201,6 @@ const botUsage = [
   { name: 'Docs Assistant', messages: '11,850', value: 57 },
   { name: 'Onboarding Helper', messages: '6,120', value: 32 },
   { name: 'Sales Qualifier', messages: '4,302', value: 22 },
-];
-
-const recentConversations = [
-  {
-    visitor: 'Visitor #8213',
-    bot: 'Support Assistant',
-    message: 'Can I get a refund on my order?',
-    status: 'resolved',
-    tone: 'success' as const,
-    age: '8m ago',
-  },
-  {
-    visitor: 'Visitor #8214',
-    bot: 'Docs Assistant',
-    message: 'How do I authenticate the REST API?',
-    status: 'active',
-    tone: 'primary' as const,
-    age: '12m ago',
-  },
-  {
-    visitor: 'Visitor #8215',
-    bot: 'Support Assistant',
-    message: "This didn't answer my question",
-    status: 'needs review',
-    tone: 'danger' as const,
-    age: '18m ago',
-  },
-];
-
-const updatedBots = [
-  {
-    name: 'Support Assistant',
-    owner: 'Jamie Doyle',
-    change: 'Prompt guardrail updated',
-    age: '24m ago',
-  },
-  {
-    name: 'Docs Assistant',
-    owner: 'Mina Patel',
-    change: 'API reference reindexed',
-    age: '41m ago',
-  },
-  { name: 'Sales Qualifier', owner: 'Eli Stone', change: 'Routing rules adjusted', age: '1h ago' },
-];
-
-const processingActivity = [
-  { source: 'help-center/refunds.md', status: 'Ready', detail: '184 chunks' },
-  { source: 'docs/api-authentication.md', status: 'Indexing', detail: '63 of 91 chunks' },
-  { source: 'pricing-faq.csv', status: 'Queued', detail: 'waiting for worker' },
-];
-
-const deployments = [
-  { bot: 'Support Assistant', status: 'Live', version: 'v14', traffic: '72%' },
-  { bot: 'Docs Assistant', status: 'Deploying', version: 'v9', traffic: '18%' },
-  { bot: 'Onboarding Helper', status: 'Draft', version: 'v3', traffic: '0%' },
-];
-
-const recentErrors = [
-  {
-    title: 'Webhook delivery failed',
-    detail: 'crm-sync endpoint returned 503',
-    count: '4 retries',
-  },
-  {
-    title: 'Knowledge sync warning',
-    detail: 'pricing-faq.csv has 3 duplicate rows',
-    count: '3 rows',
-  },
 ];
 
 type BotStatus = 'Published' | 'Draft' | 'Processing' | 'Error' | 'Disabled';
@@ -337,10 +246,6 @@ type ProviderCredentialsMessage = {
 };
 
 const workspaceOrganisationId = process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '';
-
-function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_BOTDOCK_API_BASE_URL ?? 'http://localhost:4000';
-}
 
 function getProviderLabel(provider: ModelProvider) {
   if (provider === 'openai') {
@@ -532,41 +437,65 @@ const botDetailTabs: Array<{ id: BotDetailTab; label: string }> = [
   { id: 'settings', label: 'Settings' },
 ];
 
-const botRecentActivity = [
-  {
-    title: 'Published production version',
-    detail: 'v14 promoted after 240 sampled responses passed review.',
-    age: '2 days ago',
-    icon: Rocket,
-    tone: 'success' as const,
-  },
-  {
-    title: 'System instructions updated',
-    detail: 'Refund escalation path and invoice policy phrasing tightened.',
-    age: '3 days ago',
-    icon: GitBranch,
-    tone: 'primary' as const,
-  },
-  {
-    title: 'Knowledge source added',
-    detail: 'refund-policy.pdf indexed with 186 production-ready chunks.',
-    age: '4 days ago',
-    icon: FileText,
-    tone: 'info' as const,
-  },
-];
-
-const botDeploymentChecks = [
-  { label: 'Widget embed', detail: 'Active on docs.acme.com and app.acme.com', status: 'Live' },
-  { label: 'REST API', detail: '142 requests/day from production keys', status: 'Ready' },
-  { label: 'Preview channel', detail: 'v15 draft receiving internal traffic', status: 'Active' },
-];
-
 const botKnowledgeHealth = [
   { label: 'Indexed chunks', value: '1,284', progress: 92 },
   { label: 'Citation coverage', value: '96.2%', progress: 96 },
   { label: 'Stale content risk', value: 'Low', progress: 18 },
 ];
+
+type BotConfiguration = {
+  name: string;
+  description: string;
+  initials: string;
+  welcomeMessage: string;
+  instructions: string;
+  tone: string;
+  handoffBehavior: string;
+  providerModel: string;
+  temperature: number;
+  retrievalMode: string;
+  maxSources: string;
+  responseLength: string;
+  citationStyle: string;
+  widgetTheme: string;
+  widgetPosition: string;
+  strictKnowledge: boolean;
+  promptInjectionProtection: boolean;
+  piiRedaction: boolean;
+  collectFeedback: boolean;
+  humanHandoff: boolean;
+};
+
+const promptTemplate = `You are a customer support assistant for this account.
+Answer only using the provided knowledge sources.
+Be concise, friendly, and professional.
+If policy details conflict, prefer the most recent source.
+Escalate billing disputes, account access issues, and refund exceptions.`;
+
+function getBotConfiguration(bot: BotRow): BotConfiguration {
+  return {
+    name: bot.name,
+    description: bot.description,
+    initials: bot.initials,
+    welcomeMessage: "Hi! I'm here to help with orders, returns, and account questions.",
+    instructions: promptTemplate,
+    tone: 'Friendly, precise, and calm',
+    handoffBehavior: 'Escalate after low-confidence answer',
+    providerModel: 'OpenAI · gpt-4o-mini',
+    temperature: 0.35,
+    retrievalMode: 'Hybrid semantic + keyword',
+    maxSources: '6 sources',
+    responseLength: 'Balanced',
+    citationStyle: 'Inline source chips',
+    widgetTheme: 'Dark system default',
+    widgetPosition: 'Bottom right',
+    strictKnowledge: true,
+    promptInjectionProtection: true,
+    piiRedaction: true,
+    collectFeedback: true,
+    humanHandoff: bot.status !== 'Disabled',
+  };
+}
 
 function getNavItem(id: string): NavItem {
   const navItem = navGroups.flatMap((group) => group.items).find((item) => item.id === id);
@@ -575,11 +504,60 @@ function getNavItem(id: string): NavItem {
     return navItem;
   }
 
+  if (id === settingsNavItem.id) {
+    return settingsNavItem;
+  }
+
   if (!defaultNavItem) {
     throw new Error('App shell navigation requires at least one item.');
   }
 
   return defaultNavItem;
+}
+
+function getApiBaseUrl() {
+  return process.env.NEXT_PUBLIC_BOTDOCK_API_BASE_URL ?? 'http://localhost:4000';
+}
+
+function getDisplayName(user: AuthSessionUser) {
+  return user.name?.trim() || user.email.split('@')[0] || 'BotDock user';
+}
+
+function getFirstName(user: AuthSessionUser) {
+  return getDisplayName(user).split(/\s+/)[0] ?? 'there';
+}
+
+function getInitials(user: AuthSessionUser) {
+  const displayName = getDisplayName(user);
+  const parts = displayName.split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
+  }
+
+  return displayName.slice(0, 2).toUpperCase();
+}
+
+function UserAvatar({ user, className = 'size-6' }: { user: AuthSessionUser; className?: string }) {
+  const initials = getInitials(user);
+
+  if (user.avatarUrl) {
+    return (
+      <img
+        src={user.avatarUrl}
+        alt=""
+        className={`${className} rounded-md border border-border object-cover`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`${className} flex items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground`}
+    >
+      {initials}
+    </span>
+  );
 }
 
 function OverviewLineChart() {
@@ -687,130 +665,6 @@ function OverviewDashboard() {
           </PanelBody>
         </Panel>
       </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Recent conversations</PanelTitle>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {recentConversations.map((conversation) => (
-              <div
-                key={conversation.visitor}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised p-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">
-                    {conversation.visitor} · {conversation.bot}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {conversation.message}
-                  </p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <Badge tone={conversation.tone}>{conversation.status}</Badge>
-                  <p className="mt-2 text-[11px] text-muted-foreground">{conversation.age}</p>
-                </div>
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Deployment status</PanelTitle>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {deployments.map((deployment) => (
-              <div
-                key={deployment.bot}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised p-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">{deployment.bot}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {deployment.version} · {deployment.traffic} traffic
-                  </p>
-                </div>
-                <StatusBadge status={deployment.status} />
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr_0.85fr]">
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Updated bots</PanelTitle>
-          </PanelHeader>
-          <PanelBody>
-            <DataTable>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Bot</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Change</TableHead>
-                </TableRow>
-              </TableHeader>
-              <tbody>
-                {updatedBots.map((bot) => (
-                  <TableRow key={bot.name}>
-                    <TableCell className="text-foreground">{bot.name}</TableCell>
-                    <TableCell>{bot.owner}</TableCell>
-                    <TableCell>{bot.change}</TableCell>
-                  </TableRow>
-                ))}
-              </tbody>
-            </DataTable>
-          </PanelBody>
-        </Panel>
-
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Processing activity</PanelTitle>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {processingActivity.map((item) => (
-              <div
-                key={item.source}
-                className="flex items-center gap-3 rounded-md border border-border bg-surface-raised p-3"
-              >
-                <Database className="size-4 shrink-0 text-primary" aria-hidden="true" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{item.source}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
-                </div>
-                <StatusBadge status={item.status} />
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Recent errors</PanelTitle>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {recentErrors.map((error) => (
-              <div
-                key={error.title}
-                className="rounded-md border border-danger/30 bg-danger-muted p-3"
-              >
-                <div className="flex items-center gap-2 text-sm font-medium text-danger">
-                  <TriangleAlert className="size-4" aria-hidden="true" />
-                  {error.title}
-                </div>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">{error.detail}</p>
-                <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <FileClock className="size-3.5" aria-hidden="true" />
-                  {error.count}
-                </p>
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-      </div>
     </div>
   );
 }
@@ -877,63 +731,6 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
         ))}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Recent activity</PanelTitle>
-            <PanelDescription>
-              Operational changes and knowledge updates for this bot.
-            </PanelDescription>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {botRecentActivity.map((activity) => {
-              const ActivityIcon = activity.icon;
-
-              return (
-                <div
-                  key={activity.title}
-                  className="flex gap-3 rounded-md border border-border bg-surface-raised p-3"
-                >
-                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-                    <ActivityIcon className="size-4 text-primary" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">{activity.title}</p>
-                      <Badge tone={activity.tone}>{activity.age}</Badge>
-                    </div>
-                    <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                      {activity.detail}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </PanelBody>
-        </Panel>
-
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Deployment status</PanelTitle>
-            <PanelDescription>Production surfaces currently serving {bot.name}.</PanelDescription>
-          </PanelHeader>
-          <PanelBody className="grid gap-3">
-            {botDeploymentChecks.map((deployment) => (
-              <div
-                key={deployment.label}
-                className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised p-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{deployment.label}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{deployment.detail}</p>
-                </div>
-                <StatusBadge status={deployment.status} />
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-      </div>
-
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <Panel>
           <PanelHeader>
@@ -977,6 +774,417 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
           </PanelBody>
         </Panel>
       </div>
+    </div>
+  );
+}
+
+function SelectInput({
+  className = '',
+  ...props
+}: ComponentPropsWithoutRef<'select'> & { className?: string }) {
+  return (
+    <select
+      className={`h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 ${className}`}
+      {...props}
+    />
+  );
+}
+
+function ToggleSwitch({
+  checked,
+  onChange,
+  label,
+  detail,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative h-5 w-10 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+          checked ? 'border-primary bg-primary' : 'border-border bg-muted'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 size-4 rounded-full bg-foreground shadow-surface-sm transition ${
+            checked ? 'left-5' : 'left-0.5'
+          }`}
+        />
+        <span className="sr-only">{label}</span>
+      </button>
+    </div>
+  );
+}
+
+function ConfigurationSection({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Panel>
+      <PanelHeader className="flex items-start gap-3">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+          <Icon className="size-4 text-primary" aria-hidden="true" />
+        </div>
+        <div>
+          <PanelTitle>{title}</PanelTitle>
+          <PanelDescription>{description}</PanelDescription>
+        </div>
+      </PanelHeader>
+      <PanelBody className="grid gap-4">{children}</PanelBody>
+    </Panel>
+  );
+}
+
+function BotDetailConfiguration({ bot }: { bot: BotRow }) {
+  const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
+  const [config, setConfig] = useState<BotConfiguration>(initialConfig);
+  const hasUnsavedChanges = JSON.stringify(config) !== JSON.stringify(initialConfig);
+
+  function updateConfig<Key extends keyof BotConfiguration>(
+    key: Key,
+    value: BotConfiguration[Key],
+  ) {
+    setConfig((current) => ({ ...current, [key]: value }));
+  }
+
+  return (
+    <div className="grid gap-4 pb-20 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
+      <div className="grid gap-4">
+        <ConfigurationSection
+          icon={Bot}
+          title="Identity"
+          description="Public naming, default greeting, and the compact avatar used across channels."
+        >
+          <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
+            <Field label="Bot name">
+              <TextInput
+                value={config.name}
+                onChange={(event) => updateConfig('name', event.target.value)}
+              />
+            </Field>
+            <Field label="Initials">
+              <TextInput
+                value={config.initials}
+                maxLength={3}
+                onChange={(event) => updateConfig('initials', event.target.value.toUpperCase())}
+                className="font-mono"
+              />
+            </Field>
+          </div>
+          <Field label="Description">
+            <TextInput
+              value={config.description}
+              onChange={(event) => updateConfig('description', event.target.value)}
+            />
+          </Field>
+          <Field label="Welcome message">
+            <TextArea
+              value={config.welcomeMessage}
+              onChange={(event) => updateConfig('welcomeMessage', event.target.value)}
+              className="min-h-20"
+            />
+          </Field>
+        </ConfigurationSection>
+
+        <ConfigurationSection
+          icon={FileText}
+          title="Instructions"
+          description="System prompt, conversational posture, and escalation intent for production answers."
+        >
+          <Field label="System instructions">
+            <TextArea
+              value={config.instructions}
+              onChange={(event) => updateConfig('instructions', event.target.value)}
+              className="min-h-48 font-mono text-xs leading-6"
+            />
+          </Field>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Tone">
+              <SelectInput
+                value={config.tone}
+                onChange={(event) => updateConfig('tone', event.target.value)}
+              >
+                <option>Friendly, precise, and calm</option>
+                <option>Concise and technical</option>
+                <option>Warm and consultative</option>
+              </SelectInput>
+            </Field>
+            <Field label="Handoff behavior">
+              <SelectInput
+                value={config.handoffBehavior}
+                onChange={(event) => updateConfig('handoffBehavior', event.target.value)}
+              >
+                <option>Escalate after low-confidence answer</option>
+                <option>Escalate before policy exceptions</option>
+                <option>Never escalate automatically</option>
+              </SelectInput>
+            </Field>
+          </div>
+        </ConfigurationSection>
+
+        <ConfigurationSection
+          icon={Brain}
+          title="Model"
+          description="Provider, retrieval, and response controls for draft and published versions."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Provider / Model">
+              <SelectInput
+                value={config.providerModel}
+                onChange={(event) => updateConfig('providerModel', event.target.value)}
+              >
+                <option>OpenAI · gpt-4o-mini</option>
+                <option>OpenAI · gpt-4o</option>
+                <option>OpenAI · o4-mini</option>
+              </SelectInput>
+            </Field>
+            <Field label={`Temperature · ${config.temperature.toFixed(2)}`}>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={config.temperature}
+                onChange={(event) => updateConfig('temperature', Number(event.target.value))}
+                className="h-9 w-full accent-primary"
+              />
+            </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Retrieval behavior">
+              <SelectInput
+                value={config.retrievalMode}
+                onChange={(event) => updateConfig('retrievalMode', event.target.value)}
+              >
+                <option>Hybrid semantic + keyword</option>
+                <option>Semantic only</option>
+                <option>Keyword exact-match first</option>
+              </SelectInput>
+            </Field>
+            <Field label="Source budget">
+              <SelectInput
+                value={config.maxSources}
+                onChange={(event) => updateConfig('maxSources', event.target.value)}
+              >
+                <option>4 sources</option>
+                <option>6 sources</option>
+                <option>8 sources</option>
+              </SelectInput>
+            </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Response length">
+              <SelectInput
+                value={config.responseLength}
+                onChange={(event) => updateConfig('responseLength', event.target.value)}
+              >
+                <option>Brief</option>
+                <option>Balanced</option>
+                <option>Detailed</option>
+              </SelectInput>
+            </Field>
+            <Field label="Citations">
+              <SelectInput
+                value={config.citationStyle}
+                onChange={(event) => updateConfig('citationStyle', event.target.value)}
+              >
+                <option>Inline source chips</option>
+                <option>Footer source list</option>
+                <option>Hidden from visitors</option>
+              </SelectInput>
+            </Field>
+          </div>
+        </ConfigurationSection>
+
+        <ConfigurationSection
+          icon={MessageSquareText}
+          title="Conversation"
+          description="Default visitor-facing behavior for the embedded widget."
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Widget theme">
+              <SelectInput
+                value={config.widgetTheme}
+                onChange={(event) => updateConfig('widgetTheme', event.target.value)}
+              >
+                <option>Dark system default</option>
+                <option>Match visitor preference</option>
+                <option>Light system default</option>
+              </SelectInput>
+            </Field>
+            <Field label="Widget position">
+              <SelectInput
+                value={config.widgetPosition}
+                onChange={(event) => updateConfig('widgetPosition', event.target.value)}
+              >
+                <option>Bottom right</option>
+                <option>Bottom left</option>
+                <option>Inline embed</option>
+              </SelectInput>
+            </Field>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <ToggleSwitch
+              label="Collect visitor feedback"
+              detail="Show helpful or not helpful controls after answers."
+              checked={config.collectFeedback}
+              onChange={(checked) => updateConfig('collectFeedback', checked)}
+            />
+            <ToggleSwitch
+              label="Human handoff"
+              detail="Offer an escalation path when confidence is low."
+              checked={config.humanHandoff}
+              onChange={(checked) => updateConfig('humanHandoff', checked)}
+            />
+          </div>
+        </ConfigurationSection>
+
+        <ConfigurationSection
+          icon={ShieldCheck}
+          title="Safety"
+          description="Guardrails applied before retrieval, generation, and visitor delivery."
+        >
+          <div className="grid gap-3">
+            <ToggleSwitch
+              label="Answer only from knowledge sources"
+              detail="Refuse or escalate when no grounded source supports the answer."
+              checked={config.strictKnowledge}
+              onChange={(checked) => updateConfig('strictKnowledge', checked)}
+            />
+            <ToggleSwitch
+              label="Prompt-injection protection"
+              detail="Detect instructions that attempt to override workspace policy."
+              checked={config.promptInjectionProtection}
+              onChange={(checked) => updateConfig('promptInjectionProtection', checked)}
+            />
+            <ToggleSwitch
+              label="PII redaction"
+              detail="Mask sensitive visitor data in logs and conversation exports."
+              checked={config.piiRedaction}
+              onChange={(checked) => updateConfig('piiRedaction', checked)}
+            />
+          </div>
+        </ConfigurationSection>
+      </div>
+
+      <div className="grid h-fit gap-4 xl:sticky xl:top-20">
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Draft preview</PanelTitle>
+            <PanelDescription>Current configuration summary for {bot.name}.</PanelDescription>
+          </PanelHeader>
+          <PanelBody className="grid gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-muted font-mono text-xs font-semibold text-primary">
+                {config.initials || 'BD'}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{config.name}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{config.description}</p>
+              </div>
+            </div>
+            <div className="grid gap-2 text-xs text-muted-foreground">
+              <div className="flex justify-between gap-3">
+                <span>Model</span>
+                <span className="text-right text-foreground">{config.providerModel}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Retrieval</span>
+                <span className="text-right text-foreground">{config.retrievalMode}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>Temperature</span>
+                <span className="font-mono text-foreground">{config.temperature.toFixed(2)}</span>
+              </div>
+            </div>
+            <CodeBlock className="max-h-48">{config.instructions}</CodeBlock>
+          </PanelBody>
+        </Panel>
+
+        <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
+          <PanelBody className="grid gap-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Change state</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {hasUnsavedChanges ? 'Unsaved draft changes' : 'No pending changes'}
+                </p>
+              </div>
+              <Badge tone={hasUnsavedChanges ? 'warning' : 'success'}>
+                {hasUnsavedChanges ? 'Unsaved' : 'Clean'}
+              </Badge>
+            </div>
+            <div className="grid gap-2">
+              <Button size="md" disabled={!hasUnsavedChanges}>
+                <Save className="size-4" aria-hidden="true" />
+                Save draft
+              </Button>
+              <Button variant="secondary" size="md">
+                <Play className="size-4" aria-hidden="true" />
+                Preview
+              </Button>
+              <Button variant="secondary" size="md">
+                <Rocket className="size-4" aria-hidden="true" />
+                Publish changes
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
+                disabled={!hasUnsavedChanges}
+                onClick={() => setConfig(initialConfig)}
+              >
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Reset draft
+              </Button>
+            </div>
+          </PanelBody>
+        </Panel>
+      </div>
+
+      {hasUnsavedChanges ? (
+        <div className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-5xl flex-col gap-3 rounded-lg border border-warning/60 bg-surface-raised p-3 shadow-surface-md sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning">
+              <SlidersHorizontal className="size-4" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">Unsaved configuration changes</p>
+              <p className="text-xs text-muted-foreground">Save this draft before publishing.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setConfig(initialConfig)}>
+              Reset
+            </Button>
+            <Button variant="secondary" size="sm">
+              Preview
+            </Button>
+            <Button size="sm">
+              <Save className="size-4" aria-hidden="true" />
+              Save draft
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1074,11 +1282,11 @@ function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
         </Tabs>
       </div>
 
-      {activeTab === 'overview' ? (
-        <BotDetailOverview bot={bot} />
-      ) : (
+      {activeTab === 'overview' ? <BotDetailOverview bot={bot} /> : null}
+      {activeTab === 'configuration' ? <BotDetailConfiguration bot={bot} /> : null}
+      {activeTab !== 'overview' && activeTab !== 'configuration' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1133,8 +1341,8 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
     <div className="grid gap-4">
       <Panel>
         <PanelBody className="grid gap-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="relative min-w-0 flex-1">
+          <div className="grid gap-3">
+            <div className="relative min-w-0">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
@@ -1148,7 +1356,7 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
                 <Filter className="size-3.5" aria-hidden="true" />
                 Status
@@ -1208,17 +1416,15 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
             </Button>
           </PanelHeader>
           <PanelBody className="p-0">
-            <DataTable wrapperClassName="rounded-none border-0">
+            <DataTable className="table-fixed" wrapperClassName="rounded-none border-0">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Bot</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Environment</TableHead>
-                  <TableHead>Knowledge</TableHead>
-                  <TableHead className="text-right">Conversations</TableHead>
-                  <TableHead>Last published</TableHead>
-                  <TableHead>Updated by</TableHead>
-                  <TableHead>
+                  <TableHead className="w-[38%]">Bot</TableHead>
+                  <TableHead className="w-[14%]">Status</TableHead>
+                  <TableHead className="w-[14%]">Environment</TableHead>
+                  <TableHead className="w-[12%] text-right">Conversations</TableHead>
+                  <TableHead className="w-[14%]">Published</TableHead>
+                  <TableHead className="w-[8%]">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -1238,7 +1444,7 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
                     }}
                     className={`cursor-pointer ${bot.status === 'Error' ? 'bg-danger/5' : ''}`}
                   >
-                    <TableCell className="min-w-64">
+                    <TableCell className="min-w-0 whitespace-normal">
                       <div className="flex items-center gap-3">
                         <BotAvatar bot={bot} size="sm" />
                         <div className="min-w-0">
@@ -1246,16 +1452,19 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
                           <p className="mt-1 truncate text-xs text-muted-foreground">
                             {bot.id} · {bot.description}
                           </p>
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                            {bot.knowledge} · Updated {bot.updatedAt} by {bot.updatedBy}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal">
                       <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
                       {bot.error ? (
                         <p className="mt-2 text-[11px] text-danger">{bot.error}</p>
                       ) : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal">
                       <span className="inline-flex items-center gap-2 text-foreground">
                         <span
                           className={`size-1.5 rounded-full ${
@@ -1265,17 +1474,10 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
                         {bot.environment}
                       </span>
                     </TableCell>
-                    <TableCell>{bot.knowledge}</TableCell>
                     <TableCell className="text-right font-mono text-foreground">
                       {formatCount(bot.conversations)}
                     </TableCell>
-                    <TableCell>{bot.lastPublished}</TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="text-foreground">{bot.updatedBy}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">{bot.updatedAt}</p>
-                      </div>
-                    </TableCell>
+                    <TableCell className="whitespace-normal">{bot.lastPublished}</TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         <IconButton
@@ -1958,15 +2160,173 @@ function ProviderCredentialsScreen() {
   );
 }
 
+function SettingsScreen({ user }: { user: AuthSessionUser }) {
+  const displayName = getDisplayName(user);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  return (
+    <>
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Account settings</PanelTitle>
+          <PanelDescription>
+            Manage your account and the bots connected to your default workspace.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <div className="grid gap-3">
+            <div className="rounded-md border border-border bg-surface-raised p-4">
+              <p className="text-xs text-muted-foreground">Signed in as</p>
+              <div className="mt-2 flex items-center gap-3">
+                <UserAvatar user={user} className="size-9" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{user.email}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-danger/40 bg-danger-muted p-4">
+            <div className="flex items-center gap-2">
+              <TriangleAlert className="size-4 text-danger" aria-hidden="true" />
+              <p className="text-sm font-semibold text-danger">Danger zone</p>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Deleting your account will remove your profile, sessions, OAuth identities, and bots
+              from BotDock.
+            </p>
+            <Button
+              className="mt-4"
+              variant="danger"
+              size="md"
+              onClick={() => setIsDeleteModalOpen(true)}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Delete account
+            </Button>
+          </div>
+        </PanelBody>
+      </Panel>
+
+      {isDeleteModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+                <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+              </div>
+              <div>
+                <h2 id="delete-account-title" className="text-lg font-semibold text-foreground">
+                  Delete account?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  This is a destructive action. Your profile, login connections, sessions, and bots
+                  will be permanently removed. This cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="secondary" size="md" onClick={() => setIsDeleteModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="danger" size="md" onClick={() => setIsDeleteModalOpen(false)}>
+                I understand, delete account
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export function AppShell() {
   const [activeItemId, setActiveItemId] = useState('overview');
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
+  const [theme, setTheme] = useState<AppTheme>('dark');
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [sessionUser, setSessionUser] = useState<AuthSessionUser>(fallbackUser);
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
   const selectedBot = useMemo(
     () => botRows.find((bot) => bot.id === selectedBotId) ?? null,
     [selectedBotId],
   );
   const ActiveIcon = activeItem.icon;
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const ThemeIcon = theme === 'dark' ? Sun : Moon;
+  const sessionDisplayName = getDisplayName(sessionUser);
+  const sessionFirstName = getFirstName(sessionUser);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem(themeStorageKey);
+    const nextStoredTheme: AppTheme = storedTheme === 'light' ? 'light' : 'dark';
+
+    setTheme(nextStoredTheme);
+    document.documentElement.dataset.theme = nextStoredTheme;
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSessionUser() {
+      try {
+        const response = await fetch(new URL('/auth/session', apiBaseUrl), {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = authSessionResponseSchema.parse(await response.json());
+
+        if (isMounted && payload.user) {
+          setSessionUser(payload.user);
+        }
+      } catch {
+        // Keep the dashboard usable with local fallback data if the API is unavailable.
+      }
+    }
+
+    void loadSessionUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl]);
+
+  function toggleTheme() {
+    setTheme((currentTheme) => {
+      const updatedTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+      document.documentElement.dataset.theme = updatedTheme;
+      window.localStorage.setItem(themeStorageKey, updatedTheme);
+
+      return updatedTheme;
+    });
+  }
+
+  function handleLogout() {
+    window.localStorage.removeItem(authSessionStorageKey);
+    window.location.assign('/login');
+  }
+
+  function openSettings() {
+    setActiveItemId('settings');
+    setSelectedBotId(null);
+    setIsUserMenuOpen(false);
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -1977,26 +2337,6 @@ export function AppShell() {
               B
             </div>
             <span className="text-sm font-semibold">BotDock</span>
-          </div>
-
-          <div className="border-b border-border p-3">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-surface-raised p-2 text-left transition hover:border-primary/40 hover:bg-muted"
-            >
-              <span className="flex size-6 items-center justify-center rounded-md border border-border bg-muted text-[11px] font-semibold text-muted-foreground">
-                AC
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-semibold text-foreground">
-                  Acme Corp
-                </span>
-                <span className="block truncate text-[11px] text-muted-foreground">
-                  Growth plan
-                </span>
-              </span>
-              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
-            </button>
           </div>
 
           <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
@@ -2035,59 +2375,9 @@ export function AppShell() {
               ))}
             </div>
           </nav>
-
-          <div className="border-t border-border p-3">
-            <Button variant="ghost" size="sm" className="w-full justify-start">
-              <LifeBuoy className="size-4" aria-hidden="true" />
-              Documentation
-            </Button>
-            <Button variant="ghost" size="sm" className="mt-1 w-full justify-start">
-              <CircleHelp className="size-4" aria-hidden="true" />
-              Help & feedback
-            </Button>
-            <div className="mt-3 flex items-center gap-2.5 border-t border-border pt-3">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary text-[11px] font-semibold text-primary-foreground">
-                JD
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold">Jamie Doyle</p>
-                <p className="truncate text-[11px] text-muted-foreground">jamie@acme.com</p>
-              </div>
-            </div>
-          </div>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-20 flex min-h-14 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur md:px-6">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-1.5 text-sm text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-success" />
-                <span>Production</span>
-                <ChevronDown className="size-3.5" aria-hidden="true" />
-              </div>
-              <Badge tone="success" className="hidden sm:inline-flex">
-                Live
-              </Badge>
-            </div>
-
-            <div className="hidden min-w-64 items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-muted-foreground shadow-surface-sm md:flex">
-              <Search className="size-4" aria-hidden="true" />
-              <span className="truncate">Search or jump to...</span>
-              <kbd className="ml-auto rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                K
-              </kbd>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <IconButton aria-label="Notifications" variant="ghost" size="sm">
-                <Bell className="size-4" aria-hidden="true" />
-              </IconButton>
-              <IconButton aria-label="Account menu" variant="secondary" size="sm">
-                <span className="text-[11px] font-semibold">JD</span>
-              </IconButton>
-            </div>
-          </header>
-
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
               {selectedBot ? null : (
@@ -2095,19 +2385,30 @@ export function AppShell() {
                   <div>
                     <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
                       <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
-                      <span>Acme Corp workspace</span>
+                      <span>Default workspace</span>
                     </div>
                     <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
-                      {activeItemId === 'overview' ? 'Good afternoon, Jamie' : activeItem.label}
+                      {activeItemId === 'overview'
+                        ? `Good afternoon, ${sessionFirstName}`
+                        : activeItem.label}
                     </h1>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                       {activeItemId === 'overview'
-                        ? 'Acme Corp workspace · Production'
+                        ? 'Create and manage multiple bots from your account.'
                         : activeItem.description}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      onClick={toggleTheme}
+                      aria-label={`Switch to ${nextTheme} mode`}
+                    >
+                      <ThemeIcon className="size-4" aria-hidden="true" />
+                      {nextTheme === 'light' ? 'Day mode' : 'Night mode'}
+                    </Button>
                     <Button variant="secondary" size="md">
                       Last 30 days
                       <ChevronDown className="size-4" aria-hidden="true" />
@@ -2116,6 +2417,60 @@ export function AppShell() {
                       <Bot className="size-4" aria-hidden="true" />
                       Create bot
                     </Button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-raised px-2.5 text-left text-sm font-semibold shadow-surface-sm transition hover:border-primary/50 hover:bg-muted"
+                        aria-haspopup="menu"
+                        aria-expanded={isUserMenuOpen}
+                        onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
+                      >
+                        <UserAvatar user={sessionUser} />
+                        <span className="hidden max-w-28 truncate text-foreground sm:inline">
+                          {sessionFirstName}
+                        </span>
+                        <ChevronDown
+                          className="size-3.5 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {isUserMenuOpen ? (
+                        <div
+                          role="menu"
+                          className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-surface-md"
+                        >
+                          <div className="border-b border-border px-3 py-3">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {sessionDisplayName}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {sessionUser.email}
+                            </p>
+                          </div>
+                          <div className="grid gap-1 p-1.5">
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                              onClick={openSettings}
+                            >
+                              <Settings className="size-4" aria-hidden="true" />
+                              Settings
+                            </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-danger transition hover:bg-danger-muted"
+                              onClick={handleLogout}
+                            >
+                              <LogOut className="size-4" aria-hidden="true" />
+                              Log out
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2133,11 +2488,13 @@ export function AppShell() {
                 />
               ) : activeItemId === 'provider-keys' ? (
                 <ProviderCredentialsScreen />
+              ) : activeItemId === 'settings' ? (
+                <SettingsScreen user={sessionUser} />
               ) : (
                 <Panel>
                   <PanelBody className="grid gap-6 md:grid-cols-[1fr_320px]">
                     <div>
-                      <PanelTitle>{activeItem.label} workspace surface</PanelTitle>
+                      <PanelTitle>{activeItem.label} surface</PanelTitle>
                       <PanelDescription>
                         This placeholder keeps the shell stable while the dedicated screen task
                         fills in the production UI.
@@ -2148,8 +2505,8 @@ export function AppShell() {
                           <p className="mt-2 text-sm font-semibold">Production</p>
                         </div>
                         <div className="rounded-md border border-border bg-surface-raised p-4">
-                          <p className="text-xs text-muted-foreground">Workspace</p>
-                          <p className="mt-2 text-sm font-semibold">Acme Corp</p>
+                          <p className="text-xs text-muted-foreground">Account</p>
+                          <p className="mt-2 text-sm font-semibold">Default workspace</p>
                         </div>
                         <div className="rounded-md border border-border bg-surface-raised p-4">
                           <p className="text-xs text-muted-foreground">Status</p>
