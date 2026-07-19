@@ -1094,6 +1094,19 @@ function BotDetailConfiguration({
     ? modelOptionsByProvider[selectedCredential.provider]
     : modelOptionsByProvider.openai;
   const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+  const publishReadiness = selectedCredential
+    ? {
+        tone: 'success' as const,
+        label: 'Ready to publish',
+        detail: `${getProviderLabel(selectedCredential.provider)} credential selected for draft model calls.`,
+      }
+    : {
+        tone: 'warning' as const,
+        label: 'Provider key required',
+        detail: isLoadingCredentials
+          ? 'Checking workspace provider credentials before publishing.'
+          : 'Choose an active provider key before publishing this draft.',
+      };
   const configurationPanels: Array<{
     id: BotConfigurationPanelId;
     label: string;
@@ -1109,6 +1122,16 @@ function BotDetailConfiguration({
   useEffect(() => {
     savedConfigRef.current = savedConfig;
   }, [savedConfig]);
+
+  useEffect(() => {
+    if (saveMessage?.tone !== 'success') {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setSaveMessage(null), 3800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [saveMessage]);
 
   useEffect(() => {
     const botChanged = activeBotIdRef.current !== bot.id;
@@ -1274,10 +1297,10 @@ function BotDetailConfiguration({
   }
 
   return (
-    <div className="grid gap-4 pb-24 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
-      <div className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
+    <div className="grid gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)] xl:pb-24">
+      <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
         <Panel className="h-fit lg:sticky lg:top-20">
-          <PanelBody className="flex gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
+          <PanelBody className="flex snap-x gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
             {configurationPanels.map((item) => {
               const Icon = item.icon;
               const isActive = activePanel === item.id;
@@ -1286,23 +1309,45 @@ function BotDetailConfiguration({
                 <button
                   key={item.id}
                   type="button"
+                  aria-label={`Open ${item.label} configuration`}
                   aria-pressed={isActive}
                   onClick={() => onPanelChange(item.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition lg:w-full ${
+                  className={`flex min-w-11 shrink-0 snap-start items-center justify-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition sm:min-w-0 sm:justify-start lg:w-full ${
                     isActive
                       ? 'border-primary/40 bg-primary-muted text-primary'
                       : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                 >
                   <Icon className="size-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{item.label}</span>
+                  <span className="hidden truncate sm:inline">{item.label}</span>
                 </button>
               );
             })}
           </PanelBody>
         </Panel>
 
-        <div className="min-w-0">
+        <div className="grid min-w-0 gap-4">
+          {saveMessage ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                saveMessage.tone === 'success'
+                  ? 'border-success/40 bg-success-muted text-success'
+                  : saveMessage.tone === 'warning'
+                    ? 'border-warning/40 bg-warning-muted text-warning'
+                    : 'border-danger/40 bg-danger-muted text-danger'
+              }`}
+            >
+              {saveMessage.tone === 'success' ? (
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>{saveMessage.text}</span>
+            </div>
+          ) : null}
+
           {activePanel === 'identity' ? (
             <ConfigurationSection
               icon={Bot}
@@ -1385,24 +1430,6 @@ function BotDetailConfiguration({
               title="Model"
               description="Provider, retrieval, and response controls for draft and published versions."
             >
-              {saveMessage ? (
-                <div
-                  className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
-                    saveMessage.tone === 'success'
-                      ? 'border-success/40 bg-success-muted text-success'
-                      : saveMessage.tone === 'warning'
-                        ? 'border-warning/40 bg-warning-muted text-warning'
-                        : 'border-danger/40 bg-danger-muted text-danger'
-                  }`}
-                >
-                  {saveMessage.tone === 'success' ? (
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  )}
-                  <span>{saveMessage.text}</span>
-                </div>
-              ) : null}
               {activeCredentials.length === 0 && !isLoadingCredentials ? (
                 <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
                   <span>No active provider key exists for this workspace.</span>
@@ -1624,24 +1651,6 @@ function BotDetailConfiguration({
       <div className="grid h-fit gap-4 xl:sticky xl:top-20">
         <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
           <PanelBody className="grid gap-3">
-            {saveMessage && activePanel !== 'model' ? (
-              <div
-                className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
-                  saveMessage.tone === 'success'
-                    ? 'border-success/40 bg-success-muted text-success'
-                    : saveMessage.tone === 'warning'
-                      ? 'border-warning/40 bg-warning-muted text-warning'
-                      : 'border-danger/40 bg-danger-muted text-danger'
-                }`}
-              >
-                {saveMessage.tone === 'success' ? (
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                ) : (
-                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                )}
-                <span>{saveMessage.text}</span>
-              </div>
-            ) : null}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">Change state</p>
@@ -1652,6 +1661,34 @@ function BotDetailConfiguration({
               <Badge tone={hasUnsavedChanges ? 'warning' : 'success'}>
                 {hasUnsavedChanges ? 'Unsaved' : 'Clean'}
               </Badge>
+            </div>
+            <div
+              className={`rounded-md border p-3 ${
+                publishReadiness.tone === 'success'
+                  ? 'border-success/40 bg-success-muted'
+                  : 'border-warning/40 bg-warning-muted'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  {publishReadiness.tone === 'success' ? (
+                    <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />
+                  ) : (
+                    <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
+                  )}
+                  <p
+                    className={`text-sm font-semibold ${
+                      publishReadiness.tone === 'success' ? 'text-success' : 'text-warning'
+                    }`}
+                  >
+                    {publishReadiness.label}
+                  </p>
+                </div>
+                <Badge tone={publishReadiness.tone}>Publish</Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {publishReadiness.detail}
+              </p>
             </div>
             <div className="grid gap-2">
               <Button
@@ -1670,7 +1707,11 @@ function BotDetailConfiguration({
                 <Play className="size-4" aria-hidden="true" />
                 Preview
               </Button>
-              <Button variant="secondary" size="md">
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={!selectedCredential || isLoadingCredentials}
+              >
                 <Rocket className="size-4" aria-hidden="true" />
                 Publish changes
               </Button>
@@ -1692,17 +1733,19 @@ function BotDetailConfiguration({
       </div>
 
       {hasUnsavedChanges ? (
-        <div className="fixed inset-x-2 bottom-2 z-30 mx-auto flex max-w-5xl flex-col gap-3 rounded-lg border border-warning/60 bg-surface-raised p-3 shadow-surface-md sm:inset-x-4 sm:bottom-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning">
+        <div className="fixed inset-x-2 bottom-2 z-30 mx-auto flex max-w-5xl flex-col gap-2 rounded-lg border border-warning/60 bg-surface-raised p-2.5 shadow-surface-md sm:inset-x-4 sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:p-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="hidden size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning sm:flex">
               <SlidersHorizontal className="size-4" aria-hidden="true" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Unsaved configuration changes</p>
-              <p className="text-xs text-muted-foreground">Save this draft before publishing.</p>
+              <p className="truncate text-xs text-muted-foreground">
+                Save this draft before publishing.
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
             <Button
               variant="ghost"
               size="sm"
