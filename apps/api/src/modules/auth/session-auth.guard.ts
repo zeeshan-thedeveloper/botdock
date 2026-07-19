@@ -2,9 +2,9 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { PrismaService } from '../database/prisma.service.js';
+import { AuthService } from './auth.service.js';
 import { readCookie } from './cookie.utils.js';
 import type { AuthenticatedRequest } from './current-user.decorator.js';
-import { AuthService } from './auth.service.js';
 
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
