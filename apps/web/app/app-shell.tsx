@@ -553,6 +553,15 @@ type DashboardRouteState = {
   selectedBotConfigurationPanel: BotConfigurationPanelId;
 };
 
+export function getCreatedBotDashboardRoute(botId: string): DashboardRouteState {
+  return {
+    activeItemId: 'bots',
+    selectedBotId: botId,
+    selectedBotTab: 'configuration',
+    selectedBotConfigurationPanel: 'identity',
+  };
+}
+
 const botKnowledgeHealth = [
   { label: 'Indexed chunks', value: '1,284', progress: 92 },
   { label: 'Citation coverage', value: '96.2%', progress: 96 },
@@ -3843,12 +3852,16 @@ export function AppShell() {
     setIsCreateBotOpen(false);
   }
 
+  function applyDashboardRoute(routeState: DashboardRouteState) {
+    setActiveItemId(routeState.activeItemId);
+    setSelectedBotId(routeState.selectedBotId);
+    setSelectedBotTab(routeState.selectedBotTab);
+    setSelectedBotConfigurationPanel(routeState.selectedBotConfigurationPanel);
+    writeDashboardRoute(routeState);
+  }
+
   function openSection(sectionId: string) {
-    setActiveItemId(sectionId);
-    setSelectedBotId(null);
-    setSelectedBotTab('overview');
-    setSelectedBotConfigurationPanel('identity');
-    writeDashboardRoute({
+    applyDashboardRoute({
       activeItemId: sectionId,
       selectedBotId: null,
       selectedBotTab: 'overview',
@@ -3861,11 +3874,7 @@ export function AppShell() {
     tab: BotDetailTab = 'overview',
     configurationPanel: BotConfigurationPanelId = 'identity',
   ) {
-    setActiveItemId('bots');
-    setSelectedBotId(botId);
-    setSelectedBotTab(tab);
-    setSelectedBotConfigurationPanel(configurationPanel);
-    writeDashboardRoute({
+    applyDashboardRoute({
       activeItemId: 'bots',
       selectedBotId: botId,
       selectedBotTab: tab,
@@ -4145,7 +4154,7 @@ export function AppShell() {
               onClose={() => setIsCreateBotOpen(false)}
               onBotCreated={(bot) => {
                 replaceBot(bot);
-                openBot(bot.id, 'configuration');
+                applyDashboardRoute(getCreatedBotDashboardRoute(bot.id));
               }}
               onOpenModelProviders={openModelProviders}
             />

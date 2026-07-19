@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   areBotConfigurationsEqual,
+  getCreatedBotDashboardRoute,
   getInitialDashboardRoute,
   writeDashboardRoute,
 } from './app-shell';
@@ -73,6 +74,17 @@ describe('dashboard route state', () => {
     });
 
     expect(replaceState).toHaveBeenCalledWith(null, '', '/?section=bots&bot=bot-123&tab=knowledge');
+  });
+
+  it('opens newly created bots directly in configuration with a clean default panel', () => {
+    const routeState = getCreatedBotDashboardRoute('bot-created-123');
+
+    expect(routeState).toEqual({
+      activeItemId: 'bots',
+      selectedBotId: 'bot-created-123',
+      selectedBotTab: 'configuration',
+      selectedBotConfigurationPanel: 'identity',
+    });
   });
 });
 
