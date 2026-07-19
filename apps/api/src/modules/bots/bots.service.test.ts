@@ -191,6 +191,112 @@ describe('BotsService', () => {
     expect(result.behaviorConfig.instructions).toBe('New saved instructions.');
   });
 
+  it('persists the complete draft configuration returned after save', async () => {
+    prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    prisma.bot.findFirst.mockResolvedValue({ id: 'bot-1' });
+    prisma.providerCredential.findFirst.mockResolvedValue({ id: 'credential-1' });
+    prisma.bot.update.mockResolvedValue({
+      id: 'bot-1',
+      organisationId: 'org-1',
+      name: 'Launch Assistant',
+      description: 'Handles launch questions',
+      status: 'DRAFT',
+      initials: 'LA',
+      welcomeMessage: 'Welcome to launch support.',
+      instructions: 'Use the launch runbook and cite sources.',
+      tone: 'Warm and consultative',
+      handoffBehavior: 'Escalate before policy exceptions',
+      providerCredentialId: 'credential-1',
+      model: 'gpt-4o',
+      temperature: 0.55,
+      responseLength: 'detailed',
+      retrievalMode: 'keyword',
+      maxSources: 10,
+      citationStyle: 'hidden',
+      widgetTheme: 'Light system default',
+      widgetPosition: 'Bottom left',
+      strictKnowledge: false,
+      promptInjectionProtection: false,
+      piiRedaction: true,
+      collectFeedback: false,
+      humanHandoff: true,
+      createdAt: now,
+      updatedAt: now,
+      providerCredential: {
+        provider: 'OPENAI',
+        label: 'Production OpenAI',
+        status: 'ACTIVE',
+      },
+    });
+
+    const result = await service.updateBot('org-1', 'user-1', 'bot-1', {
+      name: ' Launch Assistant ',
+      description: ' Handles launch questions ',
+      behaviorConfig: {
+        initials: 'la',
+        welcomeMessage: 'Welcome to launch support.',
+        instructions: 'Use the launch runbook and cite sources.',
+        tone: 'Warm and consultative',
+        handoffBehavior: 'Escalate before policy exceptions',
+        widgetTheme: 'Light system default',
+        widgetPosition: 'Bottom left',
+        strictKnowledge: false,
+        promptInjectionProtection: false,
+        piiRedaction: true,
+        collectFeedback: false,
+        humanHandoff: true,
+      },
+      modelConfig: {
+        providerCredentialId: 'credential-1',
+        model: ' gpt-4o ',
+        temperature: 0.55,
+        responseLength: 'detailed',
+        retrievalMode: 'keyword',
+        maxSources: 10,
+        citationStyle: 'hidden',
+      },
+    });
+
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: 'Launch Assistant',
+          description: 'Handles launch questions',
+          initials: 'LA',
+          model: 'gpt-4o',
+          temperature: 0.55,
+          responseLength: 'detailed',
+          retrievalMode: 'keyword',
+          maxSources: 10,
+          citationStyle: 'hidden',
+          widgetTheme: 'Light system default',
+          widgetPosition: 'Bottom left',
+          collectFeedback: false,
+        }),
+      }),
+    );
+    expect(result).toMatchObject({
+      name: 'Launch Assistant',
+      description: 'Handles launch questions',
+      status: 'draft',
+      behaviorConfig: {
+        initials: 'LA',
+        widgetPosition: 'Bottom left',
+        collectFeedback: false,
+      },
+      modelConfig: {
+        providerCredentialId: 'credential-1',
+        provider: 'openai',
+        credentialLabel: 'Production OpenAI',
+        model: 'gpt-4o',
+        responseLength: 'detailed',
+        retrievalMode: 'keyword',
+        maxSources: 10,
+        citationStyle: 'hidden',
+      },
+    });
+  });
+
   it('blocks list access when the user is not an organisation member', async () => {
     prisma.organisationMember.findUnique.mockResolvedValue(null);
 

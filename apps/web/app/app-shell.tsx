@@ -550,6 +550,7 @@ type DashboardRouteState = {
   activeItemId: string;
   selectedBotId: string | null;
   selectedBotTab: BotDetailTab;
+  selectedBotConfigurationPanel: BotConfigurationPanelId;
 };
 
 const botKnowledgeHealth = [
@@ -641,9 +642,24 @@ function isBotDetailTab(value: string | null): value is BotDetailTab {
   return Boolean(value && botDetailTabs.some((tab) => tab.id === value));
 }
 
-function getInitialDashboardRoute(): DashboardRouteState {
+function isBotConfigurationPanel(value: string | null): value is BotConfigurationPanelId {
+  return (
+    value === 'identity' ||
+    value === 'instructions' ||
+    value === 'model' ||
+    value === 'conversation' ||
+    value === 'safety'
+  );
+}
+
+export function getInitialDashboardRoute(): DashboardRouteState {
   if (typeof window === 'undefined') {
-    return { activeItemId: 'overview', selectedBotId: null, selectedBotTab: 'overview' };
+    return {
+      activeItemId: 'overview',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
+    };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -651,11 +667,15 @@ function getInitialDashboardRoute(): DashboardRouteState {
 
   if (selectedBotId) {
     const selectedBotTab = params.get('tab');
+    const selectedBotConfigurationPanel = params.get('config');
 
     return {
       activeItemId: 'bots',
       selectedBotId,
       selectedBotTab: isBotDetailTab(selectedBotTab) ? selectedBotTab : 'overview',
+      selectedBotConfigurationPanel: isBotConfigurationPanel(selectedBotConfigurationPanel)
+        ? selectedBotConfigurationPanel
+        : 'identity',
     };
   }
 
@@ -666,10 +686,11 @@ function getInitialDashboardRoute(): DashboardRouteState {
     activeItemId,
     selectedBotId: null,
     selectedBotTab: 'overview',
+    selectedBotConfigurationPanel: 'identity',
   };
 }
 
-function writeDashboardRoute(routeState: DashboardRouteState) {
+export function writeDashboardRoute(routeState: DashboardRouteState) {
   if (typeof window === 'undefined') {
     return;
   }
@@ -682,6 +703,13 @@ function writeDashboardRoute(routeState: DashboardRouteState) {
 
     if (routeState.selectedBotTab !== 'overview') {
       params.set('tab', routeState.selectedBotTab);
+    }
+
+    if (
+      routeState.selectedBotTab === 'configuration' &&
+      routeState.selectedBotConfigurationPanel !== 'identity'
+    ) {
+      params.set('config', routeState.selectedBotConfigurationPanel);
     }
   } else if (routeState.activeItemId !== 'overview') {
     params.set('section', routeState.activeItemId);
@@ -1031,19 +1059,21 @@ function ConfigurationSection({
 }
 
 function BotDetailConfiguration({
+  activePanel,
   bot,
+  onPanelChange,
   onBotUpdated,
   onOpenModelProviders,
 }: {
+  activePanel: BotConfigurationPanelId;
   bot: BotRow;
+  onPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
   const [config, setConfig] = useState<BotConfiguration>(initialConfig);
-  const [activeConfigurationPanel, setActiveConfigurationPanel] =
-    useState<BotConfigurationPanelId>('identity');
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -1100,14 +1130,7 @@ function BotDetailConfiguration({
         const payload = providerCredentialsResponseSchema.parse(await response.json());
 
         if (isMounted) {
-          const nextActiveCredentials = payload.credentials.filter(
-            (credential) => credential.status === 'active',
-          );
           setCredentials(payload.credentials);
-
-          if (!config.providerCredentialId && nextActiveCredentials[0]) {
-            updateConfig('providerCredentialId', nextActiveCredentials[0].id);
-          }
         }
       } catch (error) {
         if (isMounted) {
@@ -1128,7 +1151,7 @@ function BotDetailConfiguration({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl, config.providerCredentialId]);
+  }, [apiBaseUrl]);
 
   function updateConfig<Key extends keyof BotConfiguration>(
     key: Key,
@@ -1142,14 +1165,6 @@ function BotDetailConfiguration({
       setSaveMessage({
         tone: 'warning',
         text: 'Bot configuration needs a configured workspace organisation id.',
-      });
-      return;
-    }
-
-    if (!config.providerCredentialId) {
-      setSaveMessage({
-        tone: 'warning',
-        text: 'Select an active provider credential before saving model settings.',
       });
       return;
     }
@@ -1200,7 +1215,7 @@ function BotDetailConfiguration({
 
       const updatedBot = botSchema.parse(await response.json());
       onBotUpdated(updatedBot);
-      setSaveMessage({ tone: 'success', text: 'Bot model configuration saved.' });
+      setSaveMessage({ tone: 'success', text: 'Draft configuration saved.' });
     } catch (error) {
       setSaveMessage({
         tone: 'danger',
@@ -1218,14 +1233,14 @@ function BotDetailConfiguration({
           <PanelBody className="grid gap-1 p-2">
             {configurationPanels.map((item) => {
               const Icon = item.icon;
-              const isActive = activeConfigurationPanel === item.id;
+              const isActive = activePanel === item.id;
 
               return (
                 <button
                   key={item.id}
                   type="button"
                   aria-pressed={isActive}
-                  onClick={() => setActiveConfigurationPanel(item.id)}
+                  onClick={() => onPanelChange(item.id)}
                   className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition ${
                     isActive
                       ? 'border-primary/40 bg-primary-muted text-primary'
@@ -1241,7 +1256,7 @@ function BotDetailConfiguration({
         </Panel>
 
         <div className="min-w-0">
-          {activeConfigurationPanel === 'identity' ? (
+          {activePanel === 'identity' ? (
             <ConfigurationSection
               icon={Bot}
               title="Identity"
@@ -1279,7 +1294,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'instructions' ? (
+          {activePanel === 'instructions' ? (
             <ConfigurationSection
               icon={FileText}
               title="Instructions"
@@ -1317,7 +1332,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'model' ? (
+          {activePanel === 'model' ? (
             <ConfigurationSection
               icon={Brain}
               title="Model"
@@ -1483,7 +1498,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'conversation' ? (
+          {activePanel === 'conversation' ? (
             <ConfigurationSection
               icon={MessageSquareText}
               title="Conversation"
@@ -1528,7 +1543,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'safety' ? (
+          {activePanel === 'safety' ? (
             <ConfigurationSection
               icon={ShieldCheck}
               title="Safety"
@@ -1562,6 +1577,24 @@ function BotDetailConfiguration({
       <div className="grid h-fit gap-4 xl:sticky xl:top-20">
         <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
           <PanelBody className="grid gap-3">
+            {saveMessage && activePanel !== 'model' ? (
+              <div
+                className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                  saveMessage.tone === 'success'
+                    ? 'border-success/40 bg-success-muted text-success'
+                    : saveMessage.tone === 'warning'
+                      ? 'border-warning/40 bg-warning-muted text-warning'
+                      : 'border-danger/40 bg-danger-muted text-danger'
+                }`}
+              >
+                {saveMessage.tone === 'success' ? (
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                ) : (
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                )}
+                <span>{saveMessage.text}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">Change state</p>
@@ -1664,16 +1697,20 @@ function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) 
 
 function BotDetailScreen({
   activeTab,
+  activeConfigurationPanel,
   bot,
   onBack,
   onTabChange,
+  onConfigurationPanelChange,
   onBotUpdated,
   onOpenModelProviders,
 }: {
   activeTab: BotDetailTab;
+  activeConfigurationPanel: BotConfigurationPanelId;
   bot: BotRow;
   onBack: () => void;
   onTabChange: (tab: BotDetailTab) => void;
+  onConfigurationPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
@@ -1749,7 +1786,9 @@ function BotDetailScreen({
       {activeTab === 'overview' ? <BotDetailOverview bot={bot} /> : null}
       {activeTab === 'configuration' ? (
         <BotDetailConfiguration
+          activePanel={activeConfigurationPanel}
           bot={bot}
+          onPanelChange={onConfigurationPanelChange}
           onBotUpdated={onBotUpdated}
           onOpenModelProviders={onOpenModelProviders}
         />
@@ -3554,6 +3593,8 @@ export function AppShell() {
   const [activeItemId, setActiveItemId] = useState(initialRoute.activeItemId);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(initialRoute.selectedBotId);
   const [selectedBotTab, setSelectedBotTab] = useState<BotDetailTab>(initialRoute.selectedBotTab);
+  const [selectedBotConfigurationPanel, setSelectedBotConfigurationPanel] =
+    useState<BotConfigurationPanelId>(initialRoute.selectedBotConfigurationPanel);
   const [bots, setBots] = useState<BotRow[]>(botRows);
   const [botsMessage, setBotsMessage] = useState<ProviderCredentialsMessage | null>(null);
   const [isCreateBotOpen, setIsCreateBotOpen] = useState(false);
@@ -3693,23 +3734,50 @@ export function AppShell() {
     setActiveItemId(sectionId);
     setSelectedBotId(null);
     setSelectedBotTab('overview');
+    setSelectedBotConfigurationPanel('identity');
     writeDashboardRoute({
       activeItemId: sectionId,
       selectedBotId: null,
       selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
     });
   }
 
-  function openBot(botId: string, tab: BotDetailTab = 'overview') {
+  function openBot(
+    botId: string,
+    tab: BotDetailTab = 'overview',
+    configurationPanel: BotConfigurationPanelId = 'identity',
+  ) {
     setActiveItemId('bots');
     setSelectedBotId(botId);
     setSelectedBotTab(tab);
-    writeDashboardRoute({ activeItemId: 'bots', selectedBotId: botId, selectedBotTab: tab });
+    setSelectedBotConfigurationPanel(configurationPanel);
+    writeDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId: botId,
+      selectedBotTab: tab,
+      selectedBotConfigurationPanel: configurationPanel,
+    });
   }
 
   function changeBotTab(tab: BotDetailTab) {
     setSelectedBotTab(tab);
-    writeDashboardRoute({ activeItemId: 'bots', selectedBotId, selectedBotTab: tab });
+    writeDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId,
+      selectedBotTab: tab,
+      selectedBotConfigurationPanel,
+    });
+  }
+
+  function changeBotConfigurationPanel(panel: BotConfigurationPanelId) {
+    setSelectedBotConfigurationPanel(panel);
+    writeDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId,
+      selectedBotTab,
+      selectedBotConfigurationPanel: panel,
+    });
   }
 
   function closeBotDetail() {
@@ -3884,9 +3952,11 @@ export function AppShell() {
               {selectedBot ? (
                 <BotDetailScreen
                   activeTab={selectedBotTab}
+                  activeConfigurationPanel={selectedBotConfigurationPanel}
                   bot={selectedBot}
                   onBack={closeBotDetail}
                   onTabChange={changeBotTab}
+                  onConfigurationPanelChange={changeBotConfigurationPanel}
                   onBotUpdated={replaceBot}
                   onOpenModelProviders={openModelProviders}
                 />
@@ -3962,7 +4032,7 @@ export function AppShell() {
               onClose={() => setIsCreateBotOpen(false)}
               onBotCreated={(bot) => {
                 replaceBot(bot);
-                openBot(bot.id);
+                openBot(bot.id, 'configuration');
               }}
               onOpenModelProviders={openModelProviders}
             />
