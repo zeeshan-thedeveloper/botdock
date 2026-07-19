@@ -48,7 +48,7 @@ export function Button({
     <button
       type={type}
       className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-md border font-semibold transition disabled:cursor-not-allowed disabled:opacity-55',
+        'inline-flex max-w-full items-center justify-center gap-2 rounded-md border font-semibold transition disabled:cursor-not-allowed disabled:opacity-55',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         sizeStyles[size],
         variantStyles[variant],
@@ -94,7 +94,7 @@ export function Badge({
   return (
     <span
       className={cx(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase leading-none',
+        'inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase leading-none',
         toneStyles[tone],
         className,
       )}
@@ -133,14 +133,17 @@ export function StatusBadge({
 export function Panel({ className, ...props }: ComponentPropsWithoutRef<'section'>) {
   return (
     <section
-      className={cx('rounded-lg border border-border bg-surface/95 shadow-surface-sm', className)}
+      className={cx(
+        'min-w-0 rounded-lg border border-border bg-surface/95 shadow-surface-sm',
+        className,
+      )}
       {...props}
     />
   );
 }
 
 export function PanelHeader({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
-  return <div className={cx('border-b border-border px-5 py-4', className)} {...props} />;
+  return <div className={cx('min-w-0 border-b border-border px-5 py-4', className)} {...props} />;
 }
 
 export function PanelTitle({ className, ...props }: ComponentPropsWithoutRef<'h2'>) {
@@ -150,11 +153,16 @@ export function PanelTitle({ className, ...props }: ComponentPropsWithoutRef<'h2
 }
 
 export function PanelDescription({ className, ...props }: ComponentPropsWithoutRef<'p'>) {
-  return <p className={cx('mt-1 text-sm leading-6 text-muted-foreground', className)} {...props} />;
+  return (
+    <p
+      className={cx('mt-1 min-w-0 text-sm leading-6 text-muted-foreground', className)}
+      {...props}
+    />
+  );
 }
 
 export function PanelBody({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
-  return <div className={cx('p-5', className)} {...props} />;
+  return <div className={cx('min-w-0 p-5', className)} {...props} />;
 }
 
 export function Field({
@@ -171,7 +179,7 @@ export function Field({
   className?: string;
 }) {
   return (
-    <label className={cx('grid gap-2 text-sm', className)}>
+    <label className={cx('grid min-w-0 gap-2 text-sm', className)}>
       <span className="font-medium text-foreground">{label}</span>
       {children}
       {error ? (
@@ -187,7 +195,7 @@ export function TextInput({ className, ...props }: ComponentPropsWithoutRef<'inp
   return (
     <input
       className={cx(
-        'h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition',
+        'h-9 w-full min-w-0 rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition',
         'placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55',
         className,
       )}
@@ -200,7 +208,7 @@ export function TextArea({ className, ...props }: ComponentPropsWithoutRef<'text
   return (
     <textarea
       className={cx(
-        'min-h-28 w-full resize-y rounded-md border border-input bg-surface-raised px-3 py-2 text-sm leading-6 text-foreground shadow-surface-sm transition',
+        'min-h-28 w-full min-w-0 resize-y rounded-md border border-input bg-surface-raised px-3 py-2 text-sm leading-6 text-foreground shadow-surface-sm transition',
         'placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55',
         className,
       )}
@@ -213,7 +221,7 @@ export function Tabs({ className, ...props }: ComponentPropsWithoutRef<'div'>) {
   return (
     <div
       role="tablist"
-      className={cx('flex items-center gap-1 border-b border-border', className)}
+      className={cx('flex min-w-0 items-center gap-1 border-b border-border', className)}
       {...props}
     />
   );
@@ -231,7 +239,7 @@ export function Tab({
       role="tab"
       aria-selected={active}
       className={cx(
-        'border-b-2 px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         active
           ? 'border-primary text-foreground'
           : 'border-transparent text-muted-foreground hover:text-foreground',
@@ -248,8 +256,10 @@ export function DataTable({
   ...props
 }: ComponentPropsWithoutRef<'table'> & { wrapperClassName?: string }) {
   return (
-    <div className={cx('overflow-hidden rounded-lg border border-border', wrapperClassName)}>
-      <div className="overflow-x-auto">
+    <div
+      className={cx('max-w-full overflow-hidden rounded-lg border border-border', wrapperClassName)}
+    >
+      <div className="max-w-full overflow-x-auto">
         <table
           className={cx('min-w-full border-collapse text-left text-sm', className)}
           {...props}

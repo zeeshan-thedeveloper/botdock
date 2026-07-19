@@ -1001,7 +1001,7 @@ function SelectInput({
 }: ComponentPropsWithoutRef<'select'> & { className?: string }) {
   return (
     <select
-      className={`h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
+      className={`h-9 w-full min-w-0 rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
       {...props}
     />
   );
@@ -1019,10 +1019,10 @@ function ToggleSwitch({
   detail: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+        <p className="break-words text-sm font-medium text-foreground">{label}</p>
+        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{detail}</p>
       </div>
       <button
         type="button"
@@ -1061,7 +1061,7 @@ function ConfigurationSection({
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
           <Icon className="size-4 text-primary" aria-hidden="true" />
         </div>
-        <div>
+        <div className="min-w-0">
           <PanelTitle>{title}</PanelTitle>
           <PanelDescription>{description}</PanelDescription>
         </div>
@@ -1306,8 +1306,8 @@ function BotDetailConfiguration({
   }
 
   return (
-    <div className="grid gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)] xl:pb-24">
-      <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(0,1fr)] xl:pb-24">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
         <Panel className="h-fit lg:sticky lg:top-20">
           <PanelBody className="flex snap-x gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
             {configurationPanels.map((item) => {
@@ -1363,7 +1363,7 @@ function BotDetailConfiguration({
               title="Identity"
               description="Public naming, default greeting, and the compact avatar used across channels."
             >
-              <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
+              <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_120px]">
                 <Field label="Bot name">
                   <TextInput
                     value={config.name}
@@ -1440,8 +1440,10 @@ function BotDetailConfiguration({
               description="Provider, retrieval, and response controls for draft and published versions."
             >
               {activeCredentials.length === 0 && !isLoadingCredentials ? (
-                <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                  <span>No active provider key exists for this workspace.</span>
+                <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                  <span className="min-w-0 break-words">
+                    No active provider key exists for this workspace.
+                  </span>
                   <Button variant="secondary" size="sm" onClick={onOpenModelProviders}>
                     <KeyRound className="size-4" aria-hidden="true" />
                     Model Providers
@@ -1571,7 +1573,7 @@ function BotDetailConfiguration({
                       {isSaving ? 'Saving' : hasUnsavedChanges ? 'Unsaved' : 'Clean'}
                     </Badge>
                   </div>
-                  <p className="mt-2 truncate text-xs text-foreground">
+                  <p className="mt-2 break-words text-xs text-foreground [overflow-wrap:anywhere]">
                     {selectedCredential
                       ? `${getProviderLabel(selectedCredential.provider)} · ${selectedCredential.label}`
                       : 'No active credential selected'}
@@ -1661,7 +1663,7 @@ function BotDetailConfiguration({
         <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
           <PanelBody className="grid gap-3">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">Change state</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {hasUnsavedChanges ? 'Unsaved draft changes' : 'No pending changes'}
@@ -1679,7 +1681,7 @@ function BotDetailConfiguration({
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   {publishReadiness.tone === 'success' ? (
                     <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />
                   ) : (
@@ -1695,7 +1697,7 @@ function BotDetailConfiguration({
                 </div>
                 <Badge tone={publishReadiness.tone}>Publish</Badge>
               </div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
                 {publishReadiness.detail}
               </p>
             </div>
@@ -1804,6 +1806,59 @@ function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) 
   );
 }
 
+function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenBot(bot.id)}
+      className={`grid min-w-0 gap-3 border-b border-border p-4 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+        bot.status === 'Error' ? 'bg-danger/5' : ''
+      }`}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <BotAvatar bot={bot} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-start gap-2">
+            <p className="min-w-0 flex-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+              {bot.name}
+            </p>
+            <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
+          </div>
+          <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{bot.id}</p>
+          <p className="mt-2 break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+            {bot.description}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid min-w-0 gap-2 rounded-md border border-border bg-surface-raised p-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Environment</span>
+          <span className="min-w-0 break-words text-right text-foreground">{bot.environment}</span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Conversations</span>
+          <span className="font-mono text-foreground">{formatCount(bot.conversations)}</span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Published</span>
+          <span className="min-w-0 break-words text-right text-foreground">
+            {bot.lastPublished}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Updated</span>
+          <span className="min-w-0 break-words text-right text-foreground [overflow-wrap:anywhere]">
+            {bot.updatedAt} by {bot.updatedBy}
+          </span>
+        </div>
+      </div>
+
+      {bot.error ? <p className="break-words text-xs text-danger">{bot.error}</p> : null}
+    </button>
+  );
+}
+
 function BotDetailScreen({
   activeTab,
   activeConfigurationPanel,
@@ -1824,48 +1879,48 @@ function BotDetailScreen({
   onOpenModelProviders: () => void;
 }) {
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-4 border-b border-border pb-4">
+    <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 gap-4 border-b border-border pb-4">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex w-fit items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+          className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
-          Bots
+          <span className="shrink-0">Bots</span>
           <span className="text-muted-foreground/60">/</span>
-          <span className="text-foreground">{bot.name}</span>
+          <span className="min-w-0 truncate text-foreground">{bot.name}</span>
         </button>
 
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 gap-3">
             <BotAvatar bot={bot} size="lg" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+                <h1 className="min-w-0 break-words text-2xl font-semibold tracking-normal text-foreground [overflow-wrap:anywhere]">
                   {bot.name}
                 </h1>
                 <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
               </div>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
                 {bot.description}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge tone="neutral" className="font-mono normal-case">
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge tone="neutral" className="max-w-full break-all font-mono normal-case">
                   {bot.id}
                 </Badge>
-                <span>{bot.environment}</span>
+                <span className="break-words">{bot.environment}</span>
                 <span className="text-muted-foreground/50">·</span>
-                <span>{bot.version}</span>
+                <span className="break-words">{bot.version}</span>
                 <span className="text-muted-foreground/50">·</span>
-                <span>
+                <span className="break-words [overflow-wrap:anywhere]">
                   Updated {bot.updatedAt} by {bot.updatedBy}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
             <Button variant="secondary" size="md">
               <Play className="size-4" aria-hidden="true" />
               Test
@@ -1964,8 +2019,8 @@ function BotsListScreen({
   }
 
   return (
-    <div className="grid gap-4">
-      <Panel>
+    <div className="grid min-w-0 gap-4 overflow-hidden">
+      <Panel className="min-w-0 overflow-hidden">
         <PanelBody className="grid gap-4">
           <div className="grid gap-3">
             <div className="relative min-w-0">
@@ -1983,7 +2038,7 @@ function BotsListScreen({
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
                 <Filter className="size-3.5" aria-hidden="true" />
                 Status
               </div>
@@ -2002,12 +2057,12 @@ function BotsListScreen({
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
+          <div className="grid min-w-0 gap-3 border-t border-border pt-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+            <p className="min-w-0 text-sm text-muted-foreground">
               Showing <span className="font-medium text-foreground">{filteredBots.length}</span> of{' '}
               <span className="font-medium text-foreground">{bots.length}</span> bots
             </p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
               {[
                 ['updated', 'Recently updated'],
                 ['conversations', 'Most conversations'],
@@ -2029,9 +2084,9 @@ function BotsListScreen({
       </Panel>
 
       {filteredBots.length > 0 ? (
-        <Panel>
-          <PanelHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+        <Panel className="min-w-0 overflow-hidden">
+          <PanelHeader className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <PanelTitle>Bot inventory</PanelTitle>
               <PanelDescription>
                 Operational state, ownership, and publication freshness across workspace bots.
@@ -2041,16 +2096,27 @@ function BotsListScreen({
               Export CSV
             </Button>
           </PanelHeader>
-          <PanelBody className="p-0">
-            <DataTable className="table-fixed" wrapperClassName="rounded-none border-0">
+          <PanelBody className="grid gap-4 p-4">
+            <div className="-mx-4 -my-4 grid md:hidden">
+              {filteredBots.map((bot) => (
+                <BotsListCard key={bot.id} bot={bot} onOpenBot={onOpenBot} />
+              ))}
+            </div>
+            <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[38%]">Bot</TableHead>
-                  <TableHead className="w-[14%]">Status</TableHead>
-                  <TableHead className="w-[14%]">Environment</TableHead>
-                  <TableHead className="w-[12%] text-right">Conversations</TableHead>
-                  <TableHead className="w-[14%]">Published</TableHead>
-                  <TableHead className="w-[8%]">
+                  <TableHead className="w-[52%] px-3 sm:px-4">Bot</TableHead>
+                  <TableHead className="w-24 px-3 sm:px-4">Status</TableHead>
+                  <TableHead className="hidden w-28 px-3 lg:table-cell sm:px-4">
+                    Environment
+                  </TableHead>
+                  <TableHead className="w-24 px-3 text-right sm:px-4">
+                    <span className="block truncate">Conversations</span>
+                  </TableHead>
+                  <TableHead className="hidden w-28 px-3 xl:table-cell sm:px-4">
+                    Published
+                  </TableHead>
+                  <TableHead className="w-16 px-2 sm:px-3">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -2070,27 +2136,29 @@ function BotsListScreen({
                     }}
                     className={`cursor-pointer ${bot.status === 'Error' ? 'bg-danger/5' : ''}`}
                   >
-                    <TableCell className="min-w-0 whitespace-normal">
+                    <TableCell className="min-w-0 whitespace-normal px-3 sm:px-4">
                       <div className="flex items-center gap-3">
                         <BotAvatar bot={bot} size="sm" />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{bot.name}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                          <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {bot.name}
+                          </p>
+                          <p className="mt-1 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                             {bot.id} · {bot.description}
                           </p>
-                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          <p className="mt-1 break-words text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
                             {bot.knowledge} · Updated {bot.updatedAt} by {bot.updatedBy}
                           </p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-normal">
+                    <TableCell className="whitespace-normal px-3 sm:px-4">
                       <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
                       {bot.error ? (
-                        <p className="mt-2 text-[11px] text-danger">{bot.error}</p>
+                        <p className="mt-2 break-words text-[11px] text-danger">{bot.error}</p>
                       ) : null}
                     </TableCell>
-                    <TableCell className="whitespace-normal">
+                    <TableCell className="hidden whitespace-normal px-3 lg:table-cell sm:px-4">
                       <span className="inline-flex items-center gap-2 text-foreground">
                         <span
                           className={`size-1.5 rounded-full ${
@@ -2100,11 +2168,13 @@ function BotsListScreen({
                         {bot.environment}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-foreground">
+                    <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
                       {formatCount(bot.conversations)}
                     </TableCell>
-                    <TableCell className="whitespace-normal">{bot.lastPublished}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden whitespace-normal px-3 xl:table-cell sm:px-4">
+                      {bot.lastPublished}
+                    </TableCell>
+                    <TableCell className="px-2 sm:px-3">
                       <div className="flex justify-end gap-1">
                         <IconButton
                           aria-label={`Open ${bot.name}`}
@@ -3440,8 +3510,8 @@ function CreateBotModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
-      <Panel className="max-h-[92vh] w-full max-w-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto">
         <PanelHeader>
           <PanelTitle>Create bot</PanelTitle>
           <PanelDescription>
@@ -3449,17 +3519,17 @@ function CreateBotModal({
           </PanelDescription>
         </PanelHeader>
         <PanelBody>
-          <form className="grid gap-4" onSubmit={(event) => void createBot(event)}>
+          <form className="grid min-w-0 gap-4" onSubmit={(event) => void createBot(event)}>
             {message ? (
               <div
-                className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2 text-sm ${
                   message.tone === 'danger'
                     ? 'border-danger/40 bg-danger-muted text-danger'
                     : 'border-warning/40 bg-warning-muted text-warning'
                 }`}
               >
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span>{message.text}</span>
+                <span className="min-w-0 break-words">{message.text}</span>
               </div>
             ) : null}
 
@@ -3509,8 +3579,8 @@ function CreateBotModal({
             </Field>
 
             {activeCredentials.length === 0 && !isLoadingCredentials ? (
-              <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                <span>
+              <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 break-words">
                   Create a draft now, then add a validated provider key before publishing.
                 </span>
                 <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
@@ -3928,8 +3998,8 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="flex min-h-screen">
+    <div className="min-h-screen overflow-x-clip bg-background text-foreground">
+      <div className="flex min-h-screen min-w-0">
         <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
           <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
@@ -3974,28 +4044,28 @@ export function AppShell() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+          <main className="min-w-0 flex-1 overflow-x-clip overflow-y-auto">
+            <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 md:px-8 md:py-8">
               {selectedBot ? null : (
-                <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="mb-6 flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
                       <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
-                      <span>Default workspace</span>
+                      <span className="min-w-0 truncate">Default workspace</span>
                     </div>
-                    <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
+                    <h1 className="break-words text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
                       {activeItemId === 'overview'
                         ? `Good afternoon, ${sessionFirstName}`
                         : activeItem.label}
                     </h1>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground">
                       {activeItemId === 'overview'
                         ? 'Create and manage multiple bots from your account.'
                         : activeItem.description}
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
                     <Button
                       variant="secondary"
                       size="md"
@@ -4013,7 +4083,7 @@ export function AppShell() {
                       <Bot className="size-4" aria-hidden="true" />
                       Create bot
                     </Button>
-                    <div className="relative">
+                    <div className="relative min-w-0">
                       <button
                         type="button"
                         className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-raised px-2.5 text-left text-sm font-semibold shadow-surface-sm transition hover:border-primary/50 hover:bg-muted"
