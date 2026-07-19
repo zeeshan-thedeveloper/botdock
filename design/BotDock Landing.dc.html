@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #080B12; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #6366F1; text-decoration: none; }
+  a:hover { color: #7477F7; }
+</style>
+</helmet>
+<div style="width:100%;max-width:1440px;margin:0 auto;background:#080B12;color:#F8FAFC;font-family:'Inter',sans-serif;">
+
+  <!-- NAV -->
+  <div style="height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 48px;border-bottom:1px solid #192230;position:sticky;top:0;background:rgba(8,11,18,0.85);backdrop-filter:blur(8px);z-index:10;">
+    <div style="display:flex;align-items:center;gap:32px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:26px;height:26px;border-radius:7px;background:#6366F1;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff;">B</div>
+        <div style="font-weight:600;font-size:15px;">BotDock</div>
+      </div>
+      <div style="display:flex;gap:24px;font-size:13.5px;color:#A7B0BF;">
+        <div style="cursor:pointer;">Product</div>
+        <div style="cursor:pointer;">Developers</div>
+        <div style="cursor:pointer;">Pricing</div>
+        <div style="cursor:pointer;">Docs</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="font-size:13.5px;color:#A7B0BF;cursor:pointer;">Sign in</div>
+      <div style="padding:8px 16px;border-radius:8px;background:#6366F1;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;">Start building</div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div style="padding:96px 48px 80px;text-align:center;max-width:840px;margin:0 auto;position:relative;">
+    <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;border:1px solid #222C3A;background:#111722;font-size:12.5px;color:#A7B0BF;margin-bottom:24px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:#22C55E;"></span>Now supporting streaming responses &amp; source citations
+    </div>
+    <div style="font-size:56px;font-weight:700;line-height:1.1;letter-spacing:-0.02em;margin-bottom:20px;">
+      Configure, deploy, and monitor<br />AI chatbots anywhere.
+    </div>
+    <div style="font-size:17px;color:#A7B0BF;line-height:1.6;margin-bottom:36px;">
+      BotDock gives developers and product teams a single dashboard to build configurable AI chatbots, ground them in real knowledge, and embed them into any website — with full observability into every conversation.
+    </div>
+    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:20px;">
+      <div style="padding:12px 24px;border-radius:8px;background:#6366F1;font-size:14px;font-weight:600;color:#fff;cursor:pointer;">Start building free</div>
+      <div style="padding:12px 24px;border-radius:8px;border:1px solid #222C3A;font-size:14px;font-weight:600;color:#F8FAFC;cursor:pointer;">View documentation</div>
+    </div>
+    <div style="font-size:12.5px;color:#6F7B8D;">No credit card required · Free tier includes 500 messages/mo</div>
+  </div>
+
+  <!-- PRODUCT SHOT -->
+  <div style="padding:0 48px 96px;">
+    <div style="max-width:1180px;margin:0 auto;background:#0C1019;border:1px solid #222C3A;border-radius:14px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.5);">
+      <div style="height:40px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid #192230;background:#0C1019;">
+        <div style="width:10px;height:10px;border-radius:50%;background:#354256;"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#354256;"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:#354256;"></div>
+      </div>
+      <div style="display:flex;height:460px;">
+        <div style="width:200px;flex-shrink:0;border-right:1px solid #192230;padding:16px;display:flex;flex-direction:column;gap:16px;">
+          <div style="font-size:11px;color:#4E5968;text-transform:uppercase;">Workspace</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="padding:6px 8px;border-radius:6px;background:#151C28;font-size:12.5px;color:#F8FAFC;">Overview</div>
+            <div style="padding:6px 8px;font-size:12.5px;color:#A7B0BF;">Bots</div>
+            <div style="padding:6px 8px;font-size:12.5px;color:#A7B0BF;">Conversations</div>
+            <div style="padding:6px 8px;font-size:12.5px;color:#A7B0BF;">Analytics</div>
+          </div>
+        </div>
+        <div style="flex:1;padding:24px 28px;">
+          <div style="font-size:18px;font-weight:600;margin-bottom:16px;">Good afternoon, Jamie</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+            <div style="background:#151C28;border:1px solid #222C3A;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#A7B0BF;margin-bottom:6px;">Active bots</div><div style="font-size:20px;font-weight:600;">12</div></div>
+            <div style="background:#151C28;border:1px solid #222C3A;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#A7B0BF;margin-bottom:6px;">Conversations</div><div style="font-size:20px;font-weight:600;">8,204</div></div>
+            <div style="background:#151C28;border:1px solid #222C3A;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#A7B0BF;margin-bottom:6px;">Feedback</div><div style="font-size:20px;font-weight:600;">92.4%</div></div>
+            <div style="background:#151C28;border:1px solid #222C3A;border-radius:10px;padding:14px;"><div style="font-size:11px;color:#A7B0BF;margin-bottom:6px;">Est. cost</div><div style="font-size:20px;font-weight:600;">$284</div></div>
+          </div>
+          <div style="background:#151C28;border:1px solid #222C3A;border-radius:10px;padding:18px;height:180px;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Conversations over time</div>
+            <svg width="100%" height="110" viewBox="0 0 700 110"><polyline points="0,90 70,80 140,85 210,60 280,65 350,40 420,45 490,25 560,30 630,15 700,20" fill="none" stroke="#6366F1" stroke-width="2"></polyline></svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOGOS -->
+  <div style="padding:0 48px 96px;text-align:center;">
+    <div style="font-size:12px;color:#4E5968;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:24px;">Trusted by developer-first teams</div>
+    <div style="display:flex;justify-content:center;gap:56px;color:#354256;font-size:15px;font-weight:600;">
+      <div>Northwind</div><div>Aperture</div><div>Globex</div><div>Initech</div><div>Umbrella Labs</div>
+    </div>
+  </div>
+
+  <!-- FEATURES -->
+  <div style="padding:0 48px 96px;">
+    <div style="max-width:1180px;margin:0 auto;">
+      <div style="text-align:center;max-width:600px;margin:0 auto 56px;">
+        <div style="font-size:32px;font-weight:600;margin-bottom:12px;">Everything a production chatbot needs</div>
+        <div style="font-size:15px;color:#A7B0BF;">One platform to configure, ground, test, deploy, and observe — no glue code required.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(99,102,241,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#6366F1;margin-bottom:16px;">⚙</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Configurable behaviour</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">Instructions, tone, language, and response rules — versioned and testable before every publish.</div>
+        </div>
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(34,211,238,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#22D3EE;margin-bottom:16px;">▦</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Grounded knowledge</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">Upload PDFs, text, and FAQs. BotDock chunks, embeds, and cites sources in every answer.</div>
+        </div>
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(34,197,94,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#22C55E;margin-bottom:16px;">▶</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Real dev playground</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">Inspect retrieved chunks, similarity scores, prompts, latency, and token cost per request.</div>
+        </div>
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(245,158,11,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#F59E0B;margin-bottom:16px;">⬢</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Versioned deployments</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">Ship to development, staging, and production independently — roll back in one click.</div>
+        </div>
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(99,102,241,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#6366F1;margin-bottom:16px;">⌁</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Drop-in embed</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">One script tag, a React SDK, or a REST API — with domain allowlisting built in.</div>
+        </div>
+        <div style="background:#111722;border:1px solid #222C3A;border-radius:12px;padding:24px;">
+          <div style="width:36px;height:36px;border-radius:9px;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;color:#EF4444;margin-bottom:16px;">◎</div>
+          <div style="font-size:15.5px;font-weight:600;margin-bottom:8px;">Full observability</div>
+          <div style="font-size:13.5px;color:#A7B0BF;line-height:1.6;">Every conversation, cost, error, and feedback signal — searchable, exportable, and alertable.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CODE SECTION -->
+  <div style="padding:0 48px 96px;">
+    <div style="max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;">
+      <div>
+        <div style="font-size:12px;color:#6366F1;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:12px;">Built for developers</div>
+        <div style="font-size:28px;font-weight:600;margin-bottom:14px;">Embed in minutes, not sprints</div>
+        <div style="font-size:14px;color:#A7B0BF;line-height:1.7;margin-bottom:20px;">Drop a script tag on any site, or reach for the REST API and SDKs when you need full control over the conversation experience.</div>
+        <div style="display:flex;gap:10px;">
+          <div style="padding:10px 18px;border-radius:8px;background:#6366F1;font-size:13.5px;font-weight:600;color:#fff;cursor:pointer;">Read the docs</div>
+        </div>
+      </div>
+      <div style="background:#0C1019;border:1px solid #222C3A;border-radius:12px;padding:20px;">
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <div style="width:9px;height:9px;border-radius:50%;background:#354256;"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:#354256;"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:#354256;"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#A7B0BF;line-height:1.8;">
+          <span style="color:#6F7B8D;">&lt;script</span><br />
+          &nbsp;&nbsp;<span style="color:#22D3EE;">src</span>=<span style="color:#22C55E;">"https://cdn.botdock.dev/widget.js"</span><br />
+          &nbsp;&nbsp;<span style="color:#22D3EE;">data-bot-id</span>=<span style="color:#22C55E;">"bot_9k2j4"</span><br />
+          <span style="color:#6F7B8D;">&gt;&lt;/script&gt;</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div style="padding:80px 48px;text-align:center;border-top:1px solid #192230;">
+    <div style="font-size:32px;font-weight:600;margin-bottom:14px;">Ship your first bot today</div>
+    <div style="font-size:15px;color:#A7B0BF;margin-bottom:28px;">Free to start. No credit card required.</div>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <div style="padding:12px 24px;border-radius:8px;background:#6366F1;font-size:14px;font-weight:600;color:#fff;cursor:pointer;">Start building free</div>
+      <div style="padding:12px 24px;border-radius:8px;border:1px solid #222C3A;font-size:14px;font-weight:600;color:#F8FAFC;cursor:pointer;">Talk to sales</div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div style="padding:32px 48px;border-top:1px solid #192230;display:flex;justify-content:space-between;align-items:center;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div style="width:22px;height:22px;border-radius:6px;background:#6366F1;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;">B</div>
+      <div style="font-size:13px;color:#A7B0BF;">© 2026 BotDock, Inc.</div>
+    </div>
+    <div style="display:flex;gap:24px;font-size:12.5px;color:#6F7B8D;">
+      <div style="cursor:pointer;">Docs</div>
+      <div style="cursor:pointer;">Status</div>
+      <div style="cursor:pointer;">Privacy</div>
+      <div style="cursor:pointer;">Terms</div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>
