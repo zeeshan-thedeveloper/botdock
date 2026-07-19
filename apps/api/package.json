@@ -14,6 +14,7 @@
   "dependencies": {
     "@botdock/config": "workspace:*",
     "@botdock/contracts": "workspace:*",
+    "@botdock/database": "workspace:*",
     "@botdock/logger": "workspace:*",
     "@nestjs/common": "^11.0.7",
     "@nestjs/config": "^4.0.0",
