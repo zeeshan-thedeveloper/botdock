@@ -170,12 +170,6 @@ const navGroups: NavGroup[] = [
         icon: KeyRound,
         description: 'Bring your own model provider keys for chat and embeddings.',
       },
-      {
-        id: 'api-keys',
-        label: 'API Keys',
-        icon: KeyRound,
-        description: 'Scoped API keys and rotation workflows.',
-      },
     ],
   },
 ];
@@ -2160,6 +2154,516 @@ function ProviderCredentialsScreen() {
   );
 }
 
+function ProviderCredentialsScreenCompact() {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const keyInputRef = useRef<HTMLInputElement>(null);
+  const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [operation, setOperation] = useState<CredentialOperation>({ type: 'create' });
+  const [label, setLabel] = useState('Production OpenAI');
+  const [rotateLabel, setRotateLabel] = useState('');
+  const [pendingAction, setPendingAction] = useState<ProviderCredentialAction | null>(null);
+  const [pendingCredentialId, setPendingCredentialId] = useState<string | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<ProviderCredential | null>(null);
+  const [message, setMessage] = useState<ProviderCredentialsMessage | null>(null);
+
+  const canUseCredentialsApi = workspaceOrganisationId.trim().length > 0;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCredentials() {
+      if (!canUseCredentialsApi) {
+        setIsLoading(false);
+        setMessage({
+          tone: 'warning',
+          text: 'Provider credentials need a configured workspace organisation id.',
+        });
+        return;
+      }
+
+      setIsLoading(true);
+      setMessage(null);
+
+      try {
+        const response = await fetch(
+          new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
+          { credentials: 'include' },
+        );
+
+        if (!response.ok) {
+          throw new Error(await parseApiError(response));
+        }
+
+        const payload = providerCredentialsResponseSchema.parse(await response.json());
+
+        if (isMounted) {
+          setCredentials(payload.credentials);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setMessage({
+            tone: 'danger',
+            text: error instanceof Error ? error.message : 'Could not load provider credentials.',
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadCredentials();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, canUseCredentialsApi]);
+
+  function openCreateModal() {
+    setOperation({ type: 'create' });
+    setLabel('Production OpenAI');
+    setMessage(null);
+    setIsKeyModalOpen(true);
+    window.setTimeout(() => keyInputRef.current?.focus(), 0);
+  }
+
+  function openRotateModal(credential: ProviderCredential) {
+    setOperation({ type: 'rotate', credential });
+    setRotateLabel(credential.label);
+    setMessage(null);
+    setIsKeyModalOpen(true);
+    window.setTimeout(() => keyInputRef.current?.focus(), 0);
+  }
+
+  function replaceCredential(nextCredential: ProviderCredential) {
+    setCredentials((currentCredentials) => {
+      const existingIndex = currentCredentials.findIndex(
+        (credential) => credential.id === nextCredential.id,
+      );
+
+      if (existingIndex === -1) {
+        return [...currentCredentials, nextCredential].toSorted((first, second) =>
+          first.label.localeCompare(second.label),
+        );
+      }
+
+      return currentCredentials.map((credential) =>
+        credential.id === nextCredential.id ? nextCredential : credential,
+      );
+    });
+  }
+
+  async function upsertCredential(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const isRotating = operation.type === 'rotate';
+    const nextLabel = isRotating ? rotateLabel.trim() : label.trim();
+    const apiKey = keyInputRef.current?.value.trim() ?? '';
+
+    if (!nextLabel || !apiKey) {
+      setMessage({ tone: 'warning', text: 'Add a label and API key before saving.' });
+      return;
+    }
+
+    setPendingAction(isRotating ? 'rotating' : 'saving');
+    setPendingCredentialId(isRotating ? operation.credential.id : null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'openai',
+            label: nextLabel,
+            apiKey,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const credential = providerCredentialSchema.parse(await response.json());
+      replaceCredential(credential);
+      setIsKeyModalOpen(false);
+      setOperation({ type: 'create' });
+      setRotateLabel('');
+      setLabel('Production OpenAI');
+      keyInputRef.current?.form?.reset();
+      setMessage({
+        tone: credential.status === 'active' ? 'success' : 'warning',
+        text:
+          credential.status === 'active'
+            ? `${credential.label} saved and validated.`
+            : `${credential.label} was saved, but the key did not validate.`,
+      });
+    } catch (error) {
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not save the provider credential.',
+      });
+    } finally {
+      setPendingAction(null);
+      setPendingCredentialId(null);
+    }
+  }
+
+  async function validateCredential(credential: ProviderCredential) {
+    setPendingAction('validating');
+    setPendingCredentialId(credential.id);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(
+          `/organisations/${workspaceOrganisationId}/provider-credentials/${credential.id}/validate`,
+          apiBaseUrl,
+        ),
+        {
+          method: 'POST',
+          credentials: 'include',
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const nextCredential = providerCredentialSchema.parse(await response.json());
+      replaceCredential(nextCredential);
+      setMessage({
+        tone: nextCredential.status === 'active' ? 'success' : 'warning',
+        text:
+          nextCredential.status === 'active'
+            ? `${nextCredential.label} validated successfully.`
+            : `${nextCredential.label} is still not accepted by OpenAI.`,
+      });
+    } catch (error) {
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not validate the credential.',
+      });
+    } finally {
+      setPendingAction(null);
+      setPendingCredentialId(null);
+    }
+  }
+
+  async function deleteCredential() {
+    if (!deleteCandidate) {
+      return;
+    }
+
+    setPendingAction('deleting');
+    setPendingCredentialId(deleteCandidate.id);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(
+          `/organisations/${workspaceOrganisationId}/provider-credentials/${deleteCandidate.id}`,
+          apiBaseUrl,
+        ),
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setCredentials((currentCredentials) =>
+        currentCredentials.filter((credential) => credential.id !== deleteCandidate.id),
+      );
+      setMessage({ tone: 'success', text: `${deleteCandidate.label} was removed.` });
+      setDeleteCandidate(null);
+    } catch (error) {
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not remove the credential.',
+      });
+    } finally {
+      setPendingAction(null);
+      setPendingCredentialId(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      {message ? (
+        <div
+          className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+            message.tone === 'success'
+              ? 'border-success/40 bg-success-muted text-success'
+              : message.tone === 'warning'
+                ? 'border-warning/40 bg-warning-muted text-warning'
+                : 'border-danger/40 bg-danger-muted text-danger'
+          }`}
+        >
+          {message.tone === 'danger' ? (
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          )}
+          <span>{message.text}</span>
+        </div>
+      ) : null}
+
+      <Panel>
+        <PanelHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <PanelTitle>Provider keys</PanelTitle>
+            <PanelDescription>
+              Add model provider keys once. BotDock stores the secret encrypted and only shows safe
+              metadata here.
+            </PanelDescription>
+          </div>
+          <Button size="md" onClick={openCreateModal} disabled={!canUseCredentialsApi}>
+            <Plus className="size-4" aria-hidden="true" />
+            Add key
+          </Button>
+        </PanelHeader>
+        <PanelBody className={credentials.length > 0 ? 'p-0' : undefined}>
+          {isLoading ? (
+            <div className="flex min-h-56 items-center justify-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+              Loading provider keys...
+            </div>
+          ) : credentials.length === 0 ? (
+            <EmptyState
+              title="No provider keys connected"
+              description="Add an OpenAI key to make it available for bot model settings."
+              action={
+                <Button size="md" onClick={openCreateModal} disabled={!canUseCredentialsApi}>
+                  <Plus className="size-4" aria-hidden="true" />
+                  Add key
+                </Button>
+              }
+            />
+          ) : (
+            <DataTable wrapperClassName="rounded-none border-0">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Label</TableHead>
+                  <TableHead>Key</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last validated</TableHead>
+                  <TableHead>Updated</TableHead>
+                  <TableHead>
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <tbody>
+                {credentials.map((credential) => {
+                  const rowIsPending = pendingCredentialId === credential.id;
+
+                  return (
+                    <TableRow
+                      key={credential.id}
+                      className={credential.status === 'invalid' ? 'bg-danger/5' : undefined}
+                    >
+                      <TableCell className="text-foreground">
+                        {getProviderLabel(credential.provider)}
+                      </TableCell>
+                      <TableCell className="text-foreground">{credential.label}</TableCell>
+                      <TableCell>
+                        <span className="font-mono text-foreground">
+                          {credential.maskedKeyPreview}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge
+                          status={getProviderCredentialStatus(credential)}
+                          tone={getProviderCredentialTone(credential)}
+                        />
+                      </TableCell>
+                      <TableCell>{formatTimestamp(credential.lastValidatedAt)}</TableCell>
+                      <TableCell>{formatTimestamp(credential.updatedAt)}</TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <IconButton
+                            aria-label={`Validate ${credential.label}`}
+                            variant="ghost"
+                            size="sm"
+                            disabled={pendingAction !== null}
+                            onClick={() => void validateCredential(credential)}
+                          >
+                            {rowIsPending && pendingAction === 'validating' ? (
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <ShieldCheck className="size-4" aria-hidden="true" />
+                            )}
+                          </IconButton>
+                          <IconButton
+                            aria-label={`Rotate ${credential.label}`}
+                            variant="ghost"
+                            size="sm"
+                            disabled={pendingAction !== null}
+                            onClick={() => openRotateModal(credential)}
+                          >
+                            <RefreshCw className="size-4" aria-hidden="true" />
+                          </IconButton>
+                          <IconButton
+                            aria-label={`Remove ${credential.label}`}
+                            variant="ghost"
+                            size="sm"
+                            disabled={pendingAction !== null}
+                            onClick={() => setDeleteCandidate(credential)}
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </tbody>
+            </DataTable>
+          )}
+        </PanelBody>
+      </Panel>
+
+      {isKeyModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+          <Panel className="w-full max-w-md">
+            <PanelHeader>
+              <PanelTitle>
+                {operation.type === 'rotate' ? 'Rotate provider key' : 'Add provider key'}
+              </PanelTitle>
+              <PanelDescription>
+                Secrets are encrypted before storage and never returned by the API.
+              </PanelDescription>
+            </PanelHeader>
+            <PanelBody>
+              <form className="grid gap-4" onSubmit={(event) => void upsertCredential(event)}>
+                <Field label="Provider">
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55"
+                    defaultValue="openai"
+                    disabled
+                  >
+                    <option value="openai">OpenAI</option>
+                  </select>
+                </Field>
+
+                <Field label="Label">
+                  <TextInput
+                    value={operation.type === 'rotate' ? rotateLabel : label}
+                    onChange={(event) =>
+                      operation.type === 'rotate'
+                        ? setRotateLabel(event.target.value)
+                        : setLabel(event.target.value)
+                    }
+                    maxLength={80}
+                    placeholder="Production OpenAI"
+                    autoComplete="off"
+                  />
+                </Field>
+
+                <Field label="API key">
+                  <div className="relative">
+                    <EyeOff
+                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <input
+                      ref={keyInputRef}
+                      type="password"
+                      className="h-9 w-full rounded-md border border-input bg-surface-raised px-3 pl-9 text-sm text-foreground shadow-surface-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55"
+                      placeholder="sk-..."
+                      autoComplete="off"
+                    />
+                  </div>
+                </Field>
+
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    disabled={pendingAction !== null}
+                    onClick={() => setIsKeyModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={pendingAction !== null || !canUseCredentialsApi}>
+                    {pendingAction === 'saving' || pendingAction === 'rotating' ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : operation.type === 'rotate' ? (
+                      <RefreshCw className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Plus className="size-4" aria-hidden="true" />
+                    )}
+                    {operation.type === 'rotate' ? 'Rotate key' : 'Save key'}
+                  </Button>
+                </div>
+              </form>
+            </PanelBody>
+          </Panel>
+        </div>
+      ) : null}
+
+      {deleteCandidate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+          <Panel className="w-full max-w-md">
+            <PanelHeader>
+              <PanelTitle>Remove provider key?</PanelTitle>
+              <PanelDescription>
+                This removes {deleteCandidate.label} from the workspace.
+              </PanelDescription>
+            </PanelHeader>
+            <PanelBody className="grid gap-4">
+              <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Key</span>
+                  <span className="font-mono text-foreground">
+                    {deleteCandidate.maskedKeyPreview}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={pendingAction !== null}
+                  onClick={() => setDeleteCandidate(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  type="button"
+                  disabled={pendingAction !== null}
+                  onClick={() => void deleteCredential()}
+                >
+                  {pendingAction === 'deleting' ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  )}
+                  Remove key
+                </Button>
+              </div>
+            </PanelBody>
+          </Panel>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SettingsScreen({ user }: { user: AuthSessionUser }) {
   const displayName = getDisplayName(user);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -2487,7 +2991,7 @@ export function AppShell() {
                   }}
                 />
               ) : activeItemId === 'provider-keys' ? (
-                <ProviderCredentialsScreen />
+                <ProviderCredentialsScreenCompact />
               ) : activeItemId === 'settings' ? (
                 <SettingsScreen user={sessionUser} />
               ) : (
