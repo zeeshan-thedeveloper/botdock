@@ -12,6 +12,22 @@ export const createBotSchema = z.object({
   organisationId: z.string().min(1),
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
+  behaviorConfig: z
+    .object({
+      initials: z.string().trim().max(3),
+      welcomeMessage: z.string().max(1000),
+      instructions: z.string().max(8000),
+      tone: z.string().max(120),
+      handoffBehavior: z.string().max(160),
+      widgetTheme: z.string().max(120),
+      widgetPosition: z.string().max(80),
+      strictKnowledge: z.boolean(),
+      promptInjectionProtection: z.boolean(),
+      piiRedaction: z.boolean(),
+      collectFeedback: z.boolean(),
+      humanHandoff: z.boolean(),
+    })
+    .optional(),
 });
 
 export type CreateBotInput = z.infer<typeof createBotSchema>;
@@ -92,3 +108,93 @@ export const upsertProviderCredentialSchema = z.object({
 });
 
 export type UpsertProviderCredentialInput = z.infer<typeof upsertProviderCredentialSchema>;
+
+export const botStatusSchema = z.enum(['draft', 'published', 'archived']);
+
+export type BotStatus = z.infer<typeof botStatusSchema>;
+
+export const botResponseLengthSchema = z.enum(['brief', 'balanced', 'detailed']);
+
+export type BotResponseLength = z.infer<typeof botResponseLengthSchema>;
+
+export const botRetrievalModeSchema = z.enum(['hybrid', 'semantic', 'keyword']);
+
+export type BotRetrievalMode = z.infer<typeof botRetrievalModeSchema>;
+
+export const botCitationStyleSchema = z.enum([
+  'inline_source_chips',
+  'footer_source_list',
+  'hidden',
+]);
+
+export type BotCitationStyle = z.infer<typeof botCitationStyleSchema>;
+
+export const botModelConfigSchema = z.object({
+  providerCredentialId: z.string().nullable(),
+  provider: modelProviderSchema.nullable(),
+  credentialLabel: z.string().nullable(),
+  model: z.string().min(1).max(120),
+  temperature: z.number().min(0).max(1),
+  responseLength: botResponseLengthSchema,
+  retrievalMode: botRetrievalModeSchema,
+  maxSources: z.number().int().min(1).max(12),
+  citationStyle: botCitationStyleSchema,
+});
+
+export type BotModelConfig = z.infer<typeof botModelConfigSchema>;
+
+export const botBehaviorConfigSchema = z.object({
+  initials: z.string().trim().max(3),
+  welcomeMessage: z.string().max(1000),
+  instructions: z.string().max(8000),
+  tone: z.string().max(120),
+  handoffBehavior: z.string().max(160),
+  widgetTheme: z.string().max(120),
+  widgetPosition: z.string().max(80),
+  strictKnowledge: z.boolean(),
+  promptInjectionProtection: z.boolean(),
+  piiRedaction: z.boolean(),
+  collectFeedback: z.boolean(),
+  humanHandoff: z.boolean(),
+});
+
+export type BotBehaviorConfig = z.infer<typeof botBehaviorConfigSchema>;
+
+export const botSchema = z.object({
+  id: z.string(),
+  organisationId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  status: botStatusSchema,
+  modelConfig: botModelConfigSchema,
+  behaviorConfig: botBehaviorConfigSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export type Bot = z.infer<typeof botSchema>;
+
+export const botsResponseSchema = z.object({
+  bots: z.array(botSchema),
+});
+
+export type BotsResponse = z.infer<typeof botsResponseSchema>;
+
+export const updateBotSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(500).nullable().optional(),
+  behaviorConfig: botBehaviorConfigSchema.optional(),
+  modelConfig: z
+    .object({
+      providerCredentialId: z.string().nullable(),
+      model: z.string().trim().min(1).max(120),
+      temperature: z.number().min(0).max(1),
+      responseLength: botResponseLengthSchema,
+      retrievalMode: botRetrievalModeSchema,
+      maxSources: z.number().int().min(1).max(12),
+      citationStyle: botCitationStyleSchema,
+    })
+    .optional(),
+});
+
+export type UpdateBotInput = z.infer<typeof updateBotSchema>;
