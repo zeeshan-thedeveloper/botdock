@@ -15,7 +15,7 @@ BotDock authentication is designed as a backend-owned OAuth flow with secure HTT
 
 ## Providers
 
-Google and GitHub are first-class planned providers. Their provider-specific authorization URLs, code exchanges, and profile resolution are intentionally split into separate backend tasks.
+Google and GitHub OAuth are implemented as real providers. Both reuse the same signed state, user-linking, and session foundation.
 
 ## Frontend Contract
 
@@ -25,7 +25,7 @@ The dashboard auth UI should call:
 - `GET /auth/oauth/google/start`
 - `GET /auth/oauth/github/start`
 
-Provider buttons should redirect to the authorization URL once provider-specific tasks implement it.
+Provider start endpoints return an authorization URL when their client ID and secret are configured. Missing credentials return `provider_not_configured` so the frontend can disable or annotate the provider button.
 
 ## Security Principles
 
@@ -34,3 +34,41 @@ Provider buttons should redirect to the authorization URL once provider-specific
 - Cookies should be `HttpOnly`.
 - Production cookies should use `Secure`.
 - OAuth callback errors should not leak secrets or raw provider responses.
+
+## Google Local Setup
+
+Use this callback URL in the Google Cloud OAuth client for normal local development:
+
+```text
+http://localhost:4000/auth/oauth/google/callback
+```
+
+When smoke-testing a temporary API port, add that callback too, for example:
+
+```text
+http://localhost:4100/auth/oauth/google/callback
+```
+
+Set:
+
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+
+## GitHub Local Setup
+
+Use this callback URL in the GitHub OAuth app for normal local development:
+
+```text
+http://localhost:4000/auth/oauth/github/callback
+```
+
+When smoke-testing a temporary API port, add that callback too, for example:
+
+```text
+http://localhost:4100/auth/oauth/github/callback
+```
+
+Set:
+
+- `GITHUB_OAUTH_CLIENT_ID`
+- `GITHUB_OAUTH_CLIENT_SECRET`

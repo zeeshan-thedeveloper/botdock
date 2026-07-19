@@ -16,3 +16,9 @@ export type OAuthProfile = {
   avatarUrl?: string;
   profileUrl?: string;
 };
+
+export type OAuthCallbackResult = {
+  redirectTo: string;
+  sessionToken: string;
+  sessionMaxAgeSeconds: number;
+};
