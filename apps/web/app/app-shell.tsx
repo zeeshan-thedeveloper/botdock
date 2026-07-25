@@ -2529,6 +2529,7 @@ function ProviderCredentialsScreen() {
                   <TableHead>Label</TableHead>
                   <TableHead>Key</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Bots</TableHead>
                   <TableHead>Last validated</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead>
@@ -2559,6 +2560,11 @@ function ProviderCredentialsScreen() {
                           status={getProviderCredentialStatus(credential)}
                           tone={getProviderCredentialTone(credential)}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-mono text-foreground">
+                          {credential.linkedBotCount}
+                        </span>
                       </TableCell>
                       <TableCell>{formatTimestamp(credential.lastValidatedAt)}</TableCell>
                       <TableCell>{formatTimestamp(credential.updatedAt)}</TableCell>
@@ -2691,7 +2697,13 @@ function ProviderCredentialsScreen() {
             <PanelHeader>
               <PanelTitle>Remove provider key?</PanelTitle>
               <PanelDescription>
-                This removes {deleteCandidate.label} from the workspace.
+                This removes {deleteCandidate.label} from the workspace
+                {deleteCandidate.linkedBotCount > 0
+                  ? ` and clears it from ${deleteCandidate.linkedBotCount} linked ${
+                      deleteCandidate.linkedBotCount === 1 ? 'bot' : 'bots'
+                    }`
+                  : ''}
+                .
               </PanelDescription>
             </PanelHeader>
             <PanelBody className="grid gap-4">
@@ -2700,6 +2712,12 @@ function ProviderCredentialsScreen() {
                   <span className="text-muted-foreground">Key</span>
                   <span className="font-mono text-foreground">
                     {deleteCandidate.maskedKeyPreview}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-4 border-t border-border pt-3">
+                  <span className="text-muted-foreground">Linked bots</span>
+                  <span className="font-mono text-foreground">
+                    {deleteCandidate.linkedBotCount}
                   </span>
                 </div>
               </div>

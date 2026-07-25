@@ -88,6 +88,7 @@ export const providerCredentialSchema = z.object({
   maskedKeyPreview: z.string(),
   last4: z.string(),
   status: providerCredentialStatusSchema,
+  linkedBotCount: z.number().int().min(0),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastValidatedAt: z.string().datetime().nullable(),
