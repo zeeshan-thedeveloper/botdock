@@ -3,6 +3,7 @@ import {
   areBotConfigurationsEqual,
   getCreatedBotDashboardRoute,
   getInitialDashboardRoute,
+  getBotSearchText,
   writeDashboardRoute,
 } from './app-shell';
 
@@ -121,5 +122,57 @@ describe('bot configuration dirty state', () => {
         welcomeMessage: 'Updated greeting',
       }),
     ).toBe(false);
+  });
+});
+
+describe('bot inventory search metadata', () => {
+  it('includes model credential metadata so provider-key shortcuts can filter linked bots', () => {
+    const searchText = getBotSearchText({
+      id: 'bot-123',
+      name: 'Support Bot',
+      description: 'Handles support questions',
+      initials: 'SB',
+      status: 'Draft',
+      behaviorConfig: {
+        initials: 'SB',
+        welcomeMessage: 'Hi there',
+        instructions: 'Answer from sources.',
+        tone: 'Friendly, precise, and calm',
+        handoffBehavior: 'Escalate after low-confidence answer',
+        widgetTheme: 'Dark system default',
+        widgetPosition: 'Bottom right',
+        strictKnowledge: true,
+        promptInjectionProtection: true,
+        piiRedaction: true,
+        collectFeedback: true,
+        humanHandoff: true,
+      },
+      modelConfig: {
+        providerCredentialId: 'credential-openai-production',
+        provider: 'openai',
+        credentialLabel: 'Production OpenAI',
+        model: 'gpt-4o-mini',
+        temperature: 0.35,
+        retrievalMode: 'hybrid',
+        maxSources: 6,
+        responseLength: 'balanced',
+        citationStyle: 'inline_source_chips',
+      },
+      environment: 'Draft',
+      knowledge: 'No sources connected',
+      conversations: 0,
+      version: 'Draft',
+      resolutionRate: '0%',
+      feedbackRate: '0%',
+      estimatedCost: '$0.00',
+      errorRate: '0.00%',
+      lastPublished: 'Not published',
+      updatedBy: 'Workspace',
+      updatedAt: '1m ago',
+    });
+
+    expect(searchText).toContain('credential-openai-production');
+    expect(searchText).toContain('production openai');
+    expect(searchText).toContain('gpt-4o-mini');
   });
 });

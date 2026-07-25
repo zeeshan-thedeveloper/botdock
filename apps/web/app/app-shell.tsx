@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   authSessionResponseSchema,
@@ -310,6 +310,30 @@ function getProviderCredentialTone(credential: ProviderCredential) {
   }
 
   return 'danger' as const;
+}
+
+function getBotModelCredentialLabel(bot: BotRow) {
+  if (bot.modelConfig.provider && bot.modelConfig.credentialLabel) {
+    return `${getProviderLabel(bot.modelConfig.provider)} · ${bot.modelConfig.credentialLabel}`;
+  }
+
+  return 'No provider key';
+}
+
+export function getBotSearchText(bot: BotRow) {
+  return [
+    bot.name,
+    bot.id,
+    bot.description,
+    bot.environment,
+    bot.updatedBy,
+    bot.modelConfig.model,
+    bot.modelConfig.providerCredentialId ?? '',
+    bot.modelConfig.provider ? getProviderLabel(bot.modelConfig.provider) : '',
+    bot.modelConfig.credentialLabel ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
 }
 
 function formatTimestamp(value: string | null) {
@@ -1841,6 +1865,12 @@ function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: stri
           <span className="font-mono text-foreground">{formatCount(bot.conversations)}</span>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Model key</span>
+          <span className="min-w-0 break-words text-right text-foreground [overflow-wrap:anywhere]">
+            {getBotModelCredentialLabel(bot)}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
           <span className="shrink-0">Published</span>
           <span className="min-w-0 break-words text-right text-foreground">
             {bot.lastPublished}
@@ -1966,16 +1996,23 @@ function BotDetailScreen({
 
 function BotsListScreen({
   bots,
+  initialQuery,
   onCreateBot,
   onOpenBot,
 }: {
   bots: BotRow[];
+  initialQuery: string;
   onCreateBot: () => void;
   onOpenBot: (botId: string) => void;
 }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<BotFilter>('All');
   const [sortBy, setSortBy] = useState<BotSort>('updated');
+
+  useEffect(() => {
+    setQuery(initialQuery);
+    setStatusFilter('All');
+  }, [initialQuery]);
 
   const filteredBots = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1984,10 +2021,7 @@ function BotsListScreen({
       .filter((bot) => {
         const matchesStatus = statusFilter === 'All' || bot.status === statusFilter;
         const matchesQuery =
-          normalizedQuery.length === 0 ||
-          [bot.name, bot.id, bot.description, bot.environment, bot.updatedBy].some((value) =>
-            value.toLowerCase().includes(normalizedQuery),
-          );
+          normalizedQuery.length === 0 || getBotSearchText(bot).includes(normalizedQuery);
 
         return matchesStatus && matchesQuery;
       })
@@ -2105,15 +2139,18 @@ function BotsListScreen({
             <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[52%] px-3 sm:px-4">Bot</TableHead>
+                  <TableHead className="w-[44%] px-3 sm:px-4">Bot</TableHead>
                   <TableHead className="w-24 px-3 sm:px-4">Status</TableHead>
                   <TableHead className="hidden w-28 px-3 lg:table-cell sm:px-4">
                     Environment
                   </TableHead>
+                  <TableHead className="hidden w-36 px-3 xl:table-cell sm:px-4">
+                    Model key
+                  </TableHead>
                   <TableHead className="w-24 px-3 text-right sm:px-4">
                     <span className="block truncate">Conversations</span>
                   </TableHead>
-                  <TableHead className="hidden w-28 px-3 xl:table-cell sm:px-4">
+                  <TableHead className="hidden w-28 px-3 2xl:table-cell sm:px-4">
                     Published
                   </TableHead>
                   <TableHead className="w-16 px-2 sm:px-3">
@@ -2168,10 +2205,18 @@ function BotsListScreen({
                         {bot.environment}
                       </span>
                     </TableCell>
+                    <TableCell className="hidden min-w-0 whitespace-normal px-3 xl:table-cell sm:px-4">
+                      <p className="break-words text-xs font-medium text-foreground [overflow-wrap:anywhere]">
+                        {getBotModelCredentialLabel(bot)}
+                      </p>
+                      <p className="mt-1 break-words font-mono text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
+                        {bot.modelConfig.model}
+                      </p>
+                    </TableCell>
                     <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
                       {formatCount(bot.conversations)}
                     </TableCell>
-                    <TableCell className="hidden whitespace-normal px-3 xl:table-cell sm:px-4">
+                    <TableCell className="hidden whitespace-normal px-3 2xl:table-cell sm:px-4">
                       {bot.lastPublished}
                     </TableCell>
                     <TableCell className="px-2 sm:px-3">
@@ -2225,7 +2270,13 @@ function BotsListScreen({
   );
 }
 
-function ProviderCredentialsScreen() {
+function ProviderCredentialsScreen({
+  onOpenLinkedBots,
+  onCredentialsChanged,
+}: {
+  onOpenLinkedBots: (credential: ProviderCredential) => void;
+  onCredentialsChanged: () => void;
+}) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
@@ -2364,6 +2415,7 @@ function ProviderCredentialsScreen() {
 
       const credential = providerCredentialSchema.parse(await response.json());
       replaceCredential(credential);
+      onCredentialsChanged();
       setIsKeyModalOpen(false);
       setOperation({ type: 'create' });
       setRotateLabel('');
@@ -2410,6 +2462,7 @@ function ProviderCredentialsScreen() {
 
       const nextCredential = providerCredentialSchema.parse(await response.json());
       replaceCredential(nextCredential);
+      onCredentialsChanged();
       setMessage({
         tone: nextCredential.status === 'active' ? 'success' : 'warning',
         text:
@@ -2456,6 +2509,7 @@ function ProviderCredentialsScreen() {
       setCredentials((currentCredentials) =>
         currentCredentials.filter((credential) => credential.id !== deleteCandidate.id),
       );
+      onCredentialsChanged();
       setMessage({ tone: 'success', text: `${deleteCandidate.label} was removed.` });
       setDeleteCandidate(null);
     } catch (error) {
@@ -2562,9 +2616,14 @@ function ProviderCredentialsScreen() {
                         />
                       </TableCell>
                       <TableCell>
-                        <span className="font-mono text-foreground">
+                        <button
+                          type="button"
+                          className="rounded-sm font-mono text-foreground underline-offset-4 transition hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => onOpenLinkedBots(credential)}
+                          aria-label={`Show bots linked to ${credential.label}`}
+                        >
                           {credential.linkedBotCount}
-                        </span>
+                        </button>
                       </TableCell>
                       <TableCell>{formatTimestamp(credential.lastValidatedAt)}</TableCell>
                       <TableCell>{formatTimestamp(credential.updatedAt)}</TableCell>
@@ -3176,6 +3235,7 @@ export function AppShell() {
     useState<BotConfigurationPanelId>(initialRoute.selectedBotConfigurationPanel);
   const [bots, setBots] = useState<BotRow[]>(botRows);
   const [botsMessage, setBotsMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [botsInitialQuery, setBotsInitialQuery] = useState('');
   const [isCreateBotOpen, setIsCreateBotOpen] = useState(false);
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -3191,6 +3251,40 @@ export function AppShell() {
   const ThemeIcon = theme === 'dark' ? Sun : Moon;
   const sessionDisplayName = getDisplayName(sessionUser);
   const sessionFirstName = getFirstName(sessionUser);
+
+  const loadBots = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setBotsMessage({
+        tone: 'warning',
+        text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load persisted bots.',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots`, apiBaseUrl),
+        { credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const payload = botsResponseSchema.parse(await response.json());
+
+      setBots(payload.bots.map(toBotRow));
+      setBotsMessage(null);
+    } catch (error) {
+      setBotsMessage({
+        tone: 'warning',
+        text:
+          error instanceof Error
+            ? `${error.message} Showing sample bots.`
+            : 'Could not load persisted bots. Showing sample bots.',
+      });
+    }
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(themeStorageKey);
@@ -3231,52 +3325,8 @@ export function AppShell() {
   }, [apiBaseUrl]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadBots() {
-      if (!workspaceOrganisationId.trim()) {
-        setBotsMessage({
-          tone: 'warning',
-          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load persisted bots.',
-        });
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          new URL(`/organisations/${workspaceOrganisationId}/bots`, apiBaseUrl),
-          { credentials: 'include' },
-        );
-
-        if (!response.ok) {
-          throw new Error(await parseApiError(response));
-        }
-
-        const payload = botsResponseSchema.parse(await response.json());
-
-        if (isMounted) {
-          setBots(payload.bots.map(toBotRow));
-          setBotsMessage(null);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setBotsMessage({
-            tone: 'warning',
-            text:
-              error instanceof Error
-                ? `${error.message} Showing sample bots.`
-                : 'Could not load persisted bots. Showing sample bots.',
-          });
-        }
-      }
-    }
-
     void loadBots();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [apiBaseUrl]);
+  }, [loadBots]);
 
   function replaceBot(updatedBot: BotRecord) {
     setBots((currentBots) => {
@@ -3309,6 +3359,16 @@ export function AppShell() {
     setIsCreateBotOpen(false);
   }
 
+  function openLinkedBots(credential: ProviderCredential) {
+    setBotsInitialQuery(credential.id);
+    applyDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
+    });
+  }
+
   function applyDashboardRoute(routeState: DashboardRouteState) {
     setActiveItemId(routeState.activeItemId);
     setSelectedBotId(routeState.selectedBotId);
@@ -3318,6 +3378,10 @@ export function AppShell() {
   }
 
   function openSection(sectionId: string) {
+    if (sectionId === 'bots') {
+      setBotsInitialQuery('');
+    }
+
     applyDashboardRoute({
       activeItemId: sectionId,
       selectedBotId: null,
@@ -3557,12 +3621,16 @@ export function AppShell() {
                   ) : null}
                   <BotsListScreen
                     bots={bots}
+                    initialQuery={botsInitialQuery}
                     onCreateBot={() => setIsCreateBotOpen(true)}
                     onOpenBot={openBot}
                   />
                 </div>
               ) : activeItemId === 'provider-keys' ? (
-                <ProviderCredentialsScreen />
+                <ProviderCredentialsScreen
+                  onOpenLinkedBots={openLinkedBots}
+                  onCredentialsChanged={() => void loadBots()}
+                />
               ) : activeItemId === 'settings' ? (
                 <SettingsScreen user={sessionUser} />
               ) : (
