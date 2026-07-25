@@ -129,6 +129,103 @@ describe('BotsService', () => {
     expect(prisma.bot.update).not.toHaveBeenCalled();
   });
 
+  it('creates bots with an active provider credential model configuration', async () => {
+    prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    prisma.providerCredential.findFirst.mockResolvedValue({ id: 'credential-1' });
+    prisma.bot.create.mockResolvedValue({
+      id: 'bot-1',
+      organisationId: 'org-1',
+      name: 'Sales Assistant',
+      description: 'Answers sales questions',
+      status: 'DRAFT',
+      initials: 'SA',
+      welcomeMessage: 'Welcome.',
+      instructions: 'Answer from sales docs.',
+      tone: 'Friendly, precise, and calm',
+      handoffBehavior: 'Escalate after low-confidence answer',
+      providerCredentialId: 'credential-1',
+      model: 'gpt-4o',
+      temperature: 0.45,
+      responseLength: 'balanced',
+      retrievalMode: 'hybrid',
+      maxSources: 8,
+      citationStyle: 'inline_source_chips',
+      widgetTheme: 'Dark system default',
+      widgetPosition: 'Bottom right',
+      strictKnowledge: true,
+      promptInjectionProtection: true,
+      piiRedaction: true,
+      collectFeedback: true,
+      humanHandoff: true,
+      createdAt: now,
+      updatedAt: now,
+      providerCredential: {
+        provider: 'OPENAI',
+        label: 'Production OpenAI',
+        status: 'ACTIVE',
+      },
+    });
+
+    const result = await service.createBot('user-1', {
+      organisationId: ' org-1 ',
+      name: ' Sales Assistant ',
+      description: ' Answers sales questions ',
+      modelConfig: {
+        providerCredentialId: 'credential-1',
+        model: ' gpt-4o ',
+        temperature: 0.45,
+        responseLength: 'balanced',
+        retrievalMode: 'hybrid',
+        maxSources: 8,
+        citationStyle: 'inline_source_chips',
+      },
+      behaviorConfig: {
+        initials: 'sa',
+        welcomeMessage: 'Welcome.',
+        instructions: 'Answer from sales docs.',
+        tone: 'Friendly, precise, and calm',
+        handoffBehavior: 'Escalate after low-confidence answer',
+        widgetTheme: 'Dark system default',
+        widgetPosition: 'Bottom right',
+        strictKnowledge: true,
+        promptInjectionProtection: true,
+        piiRedaction: true,
+        collectFeedback: true,
+        humanHandoff: true,
+      },
+    });
+
+    expect(prisma.providerCredential.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'credential-1',
+          organisationId: 'org-1',
+          status: 'ACTIVE',
+        },
+      }),
+    );
+    expect(prisma.bot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organisationId: 'org-1',
+          name: 'Sales Assistant',
+          description: 'Answers sales questions',
+          providerCredentialId: 'credential-1',
+          model: 'gpt-4o',
+          temperature: 0.45,
+          maxSources: 8,
+          initials: 'SA',
+        }),
+      }),
+    );
+    expect(result.modelConfig).toMatchObject({
+      providerCredentialId: 'credential-1',
+      provider: 'openai',
+      credentialLabel: 'Production OpenAI',
+      model: 'gpt-4o',
+    });
+  });
+
   it('updates persisted bot behavior configuration such as instructions', async () => {
     prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
     prisma.bot.findFirst.mockResolvedValue({ id: 'bot-1' });
