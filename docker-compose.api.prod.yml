@@ -1,0 +1,39 @@
+# Production API on the DigitalOcean droplet (134.209.221.190).
+# Deployed by .github/workflows/deploy-api.yml — never add `build:` here.
+# Secrets live in ~/apps/botdock/.env on the droplet and are never committed.
+name: botdock
+
+services:
+  api:
+    image: ghcr.io/zeeshan-thedeveloper/botdock-api:${API_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+    ports:
+      # Bound to loopback only — Caddy terminates TLS and proxies to it.
+      - '127.0.0.1:4000:4000'
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--maxmemory', '96mb', '--maxmemory-policy', 'allkeys-lru']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'

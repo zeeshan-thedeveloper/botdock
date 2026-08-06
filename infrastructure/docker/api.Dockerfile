@@ -1,6 +1,7 @@
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+RUN apk add --no-cache openssl
 RUN corepack enable
 WORKDIR /app
 
@@ -32,4 +33,6 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/api ./apps/api
 COPY --from=builder /app/packages ./packages
 EXPOSE 4000
-CMD ["node", "apps/api/dist/main.js"]
+# Migrations run against DIRECT_DATABASE_URL (see schema.prisma) because Neon's
+# pooled endpoint cannot hold the advisory lock `migrate deploy` needs.
+CMD ["sh", "-c", "packages/database/node_modules/.bin/prisma migrate deploy --schema packages/database/prisma/schema.prisma && node apps/api/dist/main.js"]
