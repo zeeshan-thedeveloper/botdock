@@ -6,6 +6,7 @@ import {
   authSessionResponseSchema,
   botSchema,
   botsResponseSchema,
+  knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
   type AuthSessionUser,
@@ -1836,69 +1837,6 @@ function knowledgeSourceStatusTone(status: KnowledgeSource['status']) {
   return 'primary' as const;
 }
 
-function getKnowledgeSourcesFixture(bot: BotRow): KnowledgeSource[] {
-  const now = Date.now();
-
-  return [
-    {
-      id: `${bot.id}-source-1`,
-      organisationId: workspaceOrganisationId,
-      botId: bot.id,
-      type: 'file',
-      name: 'refund-policy.pdf',
-      status: 'ready',
-      embeddingProvider: 'openai',
-      embeddingModel: 'text-embedding-3-small',
-      chunkCount: 186,
-      errorMessage: null,
-      createdAt: new Date(now - 4 * 86_400_000).toISOString(),
-      updatedAt: new Date(now - 4 * 86_400_000).toISOString(),
-    },
-    {
-      id: `${bot.id}-source-2`,
-      organisationId: workspaceOrganisationId,
-      botId: bot.id,
-      type: 'faq',
-      name: 'Shipping FAQ',
-      status: 'ready',
-      embeddingProvider: 'openai',
-      embeddingModel: 'text-embedding-3-small',
-      chunkCount: 42,
-      errorMessage: null,
-      createdAt: new Date(now - 7 * 86_400_000).toISOString(),
-      updatedAt: new Date(now - 7 * 86_400_000).toISOString(),
-    },
-    {
-      id: `${bot.id}-source-3`,
-      organisationId: workspaceOrganisationId,
-      botId: bot.id,
-      type: 'text',
-      name: 'Account & billing notes',
-      status: 'processing',
-      embeddingProvider: 'openai',
-      embeddingModel: 'text-embedding-3-small',
-      chunkCount: 0,
-      errorMessage: null,
-      createdAt: new Date(now - 60_000).toISOString(),
-      updatedAt: new Date(now - 60_000).toISOString(),
-    },
-    {
-      id: `${bot.id}-source-4`,
-      organisationId: workspaceOrganisationId,
-      botId: bot.id,
-      type: 'file',
-      name: 'onboarding-guide.pdf',
-      status: 'failed',
-      embeddingProvider: 'openai',
-      embeddingModel: 'text-embedding-3-small',
-      chunkCount: 0,
-      errorMessage: 'PDF parsing is not supported yet; upload a text or markdown file instead.',
-      createdAt: new Date(now - 2 * 86_400_000).toISOString(),
-      updatedAt: new Date(now - 2 * 86_400_000).toISOString(),
-    },
-  ];
-}
-
 const knowledgeAllowedFileExtensions = ['.txt', '.md', '.csv', '.json', '.pdf'];
 const knowledgeMaxFileSizeBytes = 20 * 1024 * 1024;
 
@@ -1931,41 +1869,148 @@ function getKnowledgeFileValidationError(file: File): string | null {
   return null;
 }
 
-function buildMockKnowledgeSource(
-  bot: BotRow,
-  input: { name: string; type: KnowledgeSourceType },
-): KnowledgeSource {
-  const now = new Date().toISOString();
-
-  return {
-    id: `${bot.id}-source-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`,
-    organisationId: workspaceOrganisationId,
-    botId: bot.id,
-    type: input.type,
-    name: input.name,
-    status: 'processing',
-    embeddingProvider: 'openai',
-    embeddingModel: 'text-embedding-3-small',
-    chunkCount: 0,
-    errorMessage: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function BotDetailKnowledge({ bot }: { bot: BotRow }) {
-  const [sources, setSources] = useState<KnowledgeSource[]>(() => getKnowledgeSourcesFixture(bot));
+function BotDetailKnowledge({
+  bot,
+  onOpenModelProviders,
+}: {
+  bot: BotRow;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [addContentType, setAddContentType] = useState<'text' | 'faq' | null>(null);
   const [uploadQueueFiles, setUploadQueueFiles] = useState<File[] | null>(null);
   const [isDropzoneActive, setIsDropzoneActive] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<KnowledgeSource | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const totalChunks = sources.reduce((sum, source) => sum + source.chunkCount, 0);
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+  const hasProcessingSources = sources.some((source) => source.status === 'processing');
 
-  function addSource(input: { name: string; type: KnowledgeSourceType }) {
-    setSources((current) => [buildMockKnowledgeSource(bot, input), ...current]);
+  const knowledgeUrl = useCallback(
+    (suffix = '') =>
+      new URL(
+        `/organisations/${workspaceOrganisationId}/bots/${bot.id}/knowledge${suffix}`,
+        apiBaseUrl,
+      ),
+    [apiBaseUrl, bot.id],
+  );
+
+  const loadSources = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setLoadError('Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load knowledge sources.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(knowledgeUrl(), { credentials: 'include' });
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const payload = knowledgeSourcesResponseSchema.parse(await response.json());
+      setSources(payload.sources);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : 'Could not load knowledge sources.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [knowledgeUrl]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    void loadSources();
+  }, [loadSources]);
+
+  useEffect(() => {
+    if (!hasProcessingSources) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => void loadSources(), 3000);
+    return () => window.clearInterval(intervalId);
+  }, [hasProcessingSources, loadSources]);
+
+  async function addTextOrFaqSource(input: { name: string; content: string }) {
+    const response = await fetch(knowledgeUrl(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: addContentType, name: input.name, content: input.content }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+
+    await loadSources();
   }
 
-  function removeSource(id: string) {
-    setSources((current) => current.filter((source) => source.id !== id));
+  async function uploadOneFile(file: File) {
+    const formData = new FormData();
+    formData.append('type', 'file');
+    formData.append('name', file.name);
+    formData.append('file', file);
+
+    const response = await fetch(knowledgeUrl(), {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
+    const results = await Promise.allSettled(files.map((file) => uploadOneFile(file)));
+    const failureCount = results.filter((result) => result.status === 'rejected').length;
+
+    await loadSources();
+
+    if (failureCount > 0) {
+      throw new Error(
+        failureCount === files.length
+          ? 'Could not upload any of the selected files.'
+          : `${failureCount} of ${files.length} files failed to upload.`,
+      );
+    }
+  }
+
+  async function confirmDeleteSource() {
+    if (!pendingDelete) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(knowledgeUrl(`/${pendingDelete.id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok && response.status !== 204) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setSources((current) => current.filter((source) => source.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete this source.');
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   return (
@@ -1980,61 +2025,98 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
             </PanelDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setAddContentType('text')}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasActiveCredential}
+              onClick={() => setAddContentType('text')}
+            >
               <Plus className="size-4" aria-hidden="true" />
               Add text
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setAddContentType('faq')}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasActiveCredential}
+              onClick={() => setAddContentType('faq')}
+            >
               <Plus className="size-4" aria-hidden="true" />
               Add FAQ
             </Button>
-            <Button size="sm" onClick={() => setUploadQueueFiles([])}>
+            <Button size="sm" disabled={!hasActiveCredential} onClick={() => setUploadQueueFiles([])}>
               <Upload className="size-4" aria-hidden="true" />
               Upload files
             </Button>
           </div>
         </PanelHeader>
         <PanelBody className="grid gap-4">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setUploadQueueFiles([])}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                setUploadQueueFiles([]);
-              }
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setIsDropzoneActive(true);
-            }}
-            onDragLeave={() => setIsDropzoneActive(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setIsDropzoneActive(false);
-              if (event.dataTransfer.files.length > 0) {
-                setUploadQueueFiles(Array.from(event.dataTransfer.files));
-              }
-            }}
-            className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
-              isDropzoneActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
-            }`}
-          >
-            <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium text-foreground">
-              Drag and drop files, or click to browse
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
-            </p>
-          </div>
+          {loadError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{loadError}</span>
+            </div>
+          ) : null}
 
-          {sources.length === 0 ? (
+          {!hasActiveCredential ? (
             <EmptyState
-              title="No knowledge sources yet"
-              description="Upload a file or add text/FAQ content so this bot can answer from your knowledge base."
+              title="Connect a provider key to add knowledge"
+              description="Uploads and embeddings run on the workspace's own OpenAI key. Connect an active provider key for this bot before adding knowledge sources."
+              action={
+                <Button size="sm" onClick={onOpenModelProviders}>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  Connect provider key
+                </Button>
+              }
             />
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setUploadQueueFiles([])}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setUploadQueueFiles([]);
+                }
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDropzoneActive(true);
+              }}
+              onDragLeave={() => setIsDropzoneActive(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setIsDropzoneActive(false);
+                if (event.dataTransfer.files.length > 0) {
+                  setUploadQueueFiles(Array.from(event.dataTransfer.files));
+                }
+              }}
+              className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
+                isDropzoneActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+              }`}
+            >
+              <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+              <p className="mt-3 text-sm font-medium text-foreground">
+                Drag and drop files, or click to browse
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
+              </p>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading knowledge sources...
+            </div>
+          ) : sources.length === 0 ? (
+            hasActiveCredential ? (
+              <EmptyState
+                title="No knowledge sources yet"
+                description="Upload a file or add text/FAQ content so this bot can answer from your knowledge base."
+              />
+            ) : null
           ) : (
             <>
               <div className="-mx-4 -my-4 grid gap-3 p-4 md:hidden">
@@ -2114,7 +2196,10 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
                             aria-label={`Delete ${source.name}`}
                             variant="ghost"
                             size="sm"
-                            onClick={() => removeSource(source.id)}
+                            onClick={() => {
+                              setDeleteError(null);
+                              setPendingDelete(source);
+                            }}
                           >
                             <Trash2 className="size-4" aria-hidden="true" />
                           </IconButton>
@@ -2137,7 +2222,7 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
         <AddKnowledgeContentModal
           type={addContentType}
           onClose={() => setAddContentType(null)}
-          onSave={(input) => addSource({ name: input.name, type: addContentType })}
+          onSave={addTextOrFaqSource}
         />
       ) : null}
 
@@ -2145,11 +2230,21 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
         <UploadKnowledgeFilesModal
           initialFiles={uploadQueueFiles}
           onClose={() => setUploadQueueFiles(null)}
-          onFilesQueued={(files) => {
-            for (const file of files) {
-              addSource({ name: file.name, type: 'file' });
+          onFilesQueued={uploadFiles}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <DeleteKnowledgeSourceModal
+          sourceName={pendingDelete.name}
+          isDeleting={isDeleting}
+          error={deleteError}
+          onCancel={() => {
+            if (!isDeleting) {
+              setPendingDelete(null);
             }
           }}
+          onConfirm={() => void confirmDeleteSource()}
         />
       ) : null}
     </div>
@@ -2169,22 +2264,35 @@ function AddKnowledgeContentModal({
 }: {
   type: 'text' | 'faq';
   onClose: () => void;
-  onSave: (input: { name: string; content: string }) => void;
+  onSave: (input: { name: string; content: string }) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const isFaq = type === 'faq';
   const canSave = name.trim().length > 0 && content.trim().length > 0;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!canSave) {
+    if (!canSave || isSaving) {
       return;
     }
 
-    onSave({ name: name.trim(), content: content.trim() });
-    onClose();
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      await onSave({ name: name.trim(), content: content.trim() });
+      onClose();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error ? submitError.message : 'Could not save this knowledge source.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -2199,13 +2307,20 @@ function AddKnowledgeContentModal({
           </PanelDescription>
         </PanelHeader>
         <PanelBody>
-          <form className="grid gap-4" onSubmit={handleSubmit}>
+          <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
+            {error ? (
+              <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">{error}</span>
+              </div>
+            ) : null}
             <Field label="Name">
               <TextInput
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={isFaq ? 'Shipping FAQ' : 'Account & billing notes'}
                 autoFocus
+                disabled={isSaving}
               />
             </Field>
             <Field
@@ -2221,14 +2336,19 @@ function AddKnowledgeContentModal({
                     : 'Paste the reference text for this bot to answer from...'
                 }
                 className="min-h-40"
+                disabled={isSaving}
               />
             </Field>
             <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
-              <Button variant="secondary" type="button" onClick={onClose}>
+              <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!canSave}>
-                <Plus className="size-4" aria-hidden="true" />
+              <Button type="submit" disabled={!canSave || isSaving}>
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
                 {isFaq ? 'Add FAQ' : 'Add text'}
               </Button>
             </div>
@@ -2246,11 +2366,13 @@ function UploadKnowledgeFilesModal({
 }: {
   initialFiles: File[];
   onClose: () => void;
-  onFilesQueued: (files: File[]) => void;
+  onFilesQueued: (files: File[]) => Promise<void>;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [queue, setQueue] = useState<QueuedKnowledgeFile[]>(() => toQueuedFiles(initialFiles));
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const validFiles = queue.filter((item) => !item.error);
   const hasInvalidFiles = queue.some((item) => item.error);
 
@@ -2277,13 +2399,22 @@ function UploadKnowledgeFilesModal({
     setQueue((current) => current.filter((item) => item.id !== id));
   }
 
-  function handleUpload() {
-    if (validFiles.length === 0) {
+  async function handleUpload() {
+    if (validFiles.length === 0 || isUploading) {
       return;
     }
 
-    onFilesQueued(validFiles.map((item) => item.file));
-    onClose();
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      await onFilesQueued(validFiles.map((item) => item.file));
+      onClose();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Could not upload these files.');
+    } finally {
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -2296,6 +2427,12 @@ function UploadKnowledgeFilesModal({
           </PanelDescription>
         </PanelHeader>
         <PanelBody className="grid gap-4">
+          {error ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{error}</span>
+            </div>
+          ) : null}
           <div
             role="button"
             tabIndex={0}
@@ -2383,17 +2520,90 @@ function UploadKnowledgeFilesModal({
           ) : null}
 
           <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
-            <Button variant="secondary" type="button" onClick={onClose}>
+            <Button variant="secondary" type="button" disabled={isUploading} onClick={onClose}>
               Cancel
             </Button>
-            <Button type="button" disabled={validFiles.length === 0} onClick={handleUpload}>
-              <Upload className="size-4" aria-hidden="true" />
+            <Button
+              type="button"
+              disabled={validFiles.length === 0 || isUploading}
+              onClick={() => void handleUpload()}
+            >
+              {isUploading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="size-4" aria-hidden="true" />
+              )}
               Upload {validFiles.length > 0 ? validFiles.length : ''} file
               {validFiles.length === 1 ? '' : 's'}
             </Button>
           </div>
         </PanelBody>
       </Panel>
+    </div>
+  );
+}
+
+function DeleteKnowledgeSourceModal({
+  sourceName,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  sourceName: string;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-knowledge-source-title"
+        className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+            <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="delete-knowledge-source-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Delete &ldquo;{sourceName}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              This removes the source, its stored file, and every indexed chunk. This cannot be
+              undone.
+            </p>
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isDeleting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="md" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="size-4" aria-hidden="true" />
+            )}
+            Delete source
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2576,7 +2786,9 @@ function BotDetailScreen({
           onOpenModelProviders={onOpenModelProviders}
         />
       ) : null}
-      {activeTab === 'knowledge' ? <BotDetailKnowledge bot={bot} /> : null}
+      {activeTab === 'knowledge' ? (
+        <BotDetailKnowledge bot={bot} onOpenModelProviders={onOpenModelProviders} />
+      ) : null}
       {activeTab !== 'overview' && activeTab !== 'configuration' && activeTab !== 'knowledge' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
       ) : null}
