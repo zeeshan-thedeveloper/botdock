@@ -25,6 +25,9 @@ type StoredCredential = {
   createdAt: Date;
   updatedAt: Date;
   lastValidatedAt: Date | null;
+  _count: {
+    bots: number;
+  };
 };
 
 @Injectable()
@@ -208,6 +211,7 @@ export class ProviderCredentialsService {
       maskedKeyPreview: this.cryptoService.mask(credential.last4),
       last4: credential.last4,
       status: this.toResponseStatus(credential.status),
+      linkedBotCount: credential._count.bots,
       createdAt: credential.createdAt.toISOString(),
       updatedAt: credential.updatedAt.toISOString(),
       lastValidatedAt: credential.lastValidatedAt?.toISOString() ?? null,
@@ -224,6 +228,11 @@ export class ProviderCredentialsService {
       createdAt: true,
       updatedAt: true,
       lastValidatedAt: true,
+      _count: {
+        select: {
+          bots: true,
+        },
+      },
     } as const;
   }
 }

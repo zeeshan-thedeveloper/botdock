@@ -65,6 +65,7 @@ describe('ProviderCredentialsService', () => {
       createdAt: now,
       updatedAt: now,
       lastValidatedAt: now,
+      _count: { bots: 2 },
     });
 
     const result = await service.upsertCredential('org-1', 'user-1', {
@@ -92,6 +93,7 @@ describe('ProviderCredentialsService', () => {
       maskedKeyPreview: '****1234',
       last4: '1234',
       status: 'active',
+      linkedBotCount: 2,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       lastValidatedAt: now.toISOString(),
@@ -115,6 +117,7 @@ describe('ProviderCredentialsService', () => {
       createdAt: now,
       updatedAt: now,
       lastValidatedAt: now,
+      _count: { bots: 0 },
     });
 
     const result = await service.upsertCredential('org-1', 'user-1', {
@@ -124,6 +127,7 @@ describe('ProviderCredentialsService', () => {
     });
 
     expect(result.status).toBe('invalid');
+    expect(result.linkedBotCount).toBe(0);
     expect(prisma.providerCredential.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ status: 'INVALID' }),
@@ -149,5 +153,51 @@ describe('ProviderCredentialsService', () => {
       service.validateCredential('org-1', 'user-1', 'credential-from-other-org'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(cryptoService.decrypt).not.toHaveBeenCalled();
+  });
+
+  it('lists linked bot counts with safe credential metadata', async () => {
+    prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    cryptoService.mask.mockReturnValue('****9876');
+    prisma.providerCredential.findMany.mockResolvedValue([
+      {
+        id: 'credential-2',
+        provider: 'OPENAI',
+        label: 'Support',
+        last4: '9876',
+        status: 'ACTIVE',
+        createdAt: now,
+        updatedAt: now,
+        lastValidatedAt: now,
+        _count: { bots: 3 },
+      },
+    ]);
+
+    await expect(service.listCredentials('org-1', 'user-1')).resolves.toEqual({
+      credentials: [
+        {
+          id: 'credential-2',
+          provider: 'openai',
+          label: 'Support',
+          maskedKeyPreview: '****9876',
+          last4: '9876',
+          status: 'active',
+          linkedBotCount: 3,
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+          lastValidatedAt: now.toISOString(),
+        },
+      ],
+    });
+    expect(prisma.providerCredential.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          _count: {
+            select: {
+              bots: true,
+            },
+          },
+        }),
+      }),
+    );
   });
 });

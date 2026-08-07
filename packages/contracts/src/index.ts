@@ -12,6 +12,17 @@ export const createBotSchema = z.object({
   organisationId: z.string().min(1),
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
+  modelConfig: z
+    .object({
+      providerCredentialId: z.string().nullable(),
+      model: z.string().trim().min(1).max(120),
+      temperature: z.number().min(0).max(1),
+      responseLength: z.enum(['brief', 'balanced', 'detailed']),
+      retrievalMode: z.enum(['hybrid', 'semantic', 'keyword']),
+      maxSources: z.number().int().min(1).max(12),
+      citationStyle: z.enum(['inline_source_chips', 'footer_source_list', 'hidden']),
+    })
+    .optional(),
   behaviorConfig: z
     .object({
       initials: z.string().trim().max(3),
@@ -88,6 +99,7 @@ export const providerCredentialSchema = z.object({
   maskedKeyPreview: z.string(),
   last4: z.string(),
   status: providerCredentialStatusSchema,
+  linkedBotCount: z.number().int().min(0),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastValidatedAt: z.string().datetime().nullable(),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   authSessionResponseSchema,
@@ -310,6 +310,30 @@ function getProviderCredentialTone(credential: ProviderCredential) {
   }
 
   return 'danger' as const;
+}
+
+function getBotModelCredentialLabel(bot: BotRow) {
+  if (bot.modelConfig.provider && bot.modelConfig.credentialLabel) {
+    return `${getProviderLabel(bot.modelConfig.provider)} · ${bot.modelConfig.credentialLabel}`;
+  }
+
+  return 'No provider key';
+}
+
+export function getBotSearchText(bot: BotRow) {
+  return [
+    bot.name,
+    bot.id,
+    bot.description,
+    bot.environment,
+    bot.updatedBy,
+    bot.modelConfig.model,
+    bot.modelConfig.providerCredentialId ?? '',
+    bot.modelConfig.provider ? getProviderLabel(bot.modelConfig.provider) : '',
+    bot.modelConfig.credentialLabel ?? '',
+  ]
+    .join(' ')
+    .toLowerCase();
 }
 
 function formatTimestamp(value: string | null) {
@@ -1001,7 +1025,7 @@ function SelectInput({
 }: ComponentPropsWithoutRef<'select'> & { className?: string }) {
   return (
     <select
-      className={`h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
+      className={`h-9 w-full min-w-0 rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
       {...props}
     />
   );
@@ -1019,10 +1043,10 @@ function ToggleSwitch({
   detail: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3">
+    <div className="flex min-w-0 items-center justify-between gap-4 rounded-md border border-border bg-surface-raised px-4 py-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+        <p className="break-words text-sm font-medium text-foreground">{label}</p>
+        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{detail}</p>
       </div>
       <button
         type="button"
@@ -1061,7 +1085,7 @@ function ConfigurationSection({
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
           <Icon className="size-4 text-primary" aria-hidden="true" />
         </div>
-        <div>
+        <div className="min-w-0">
           <PanelTitle>{title}</PanelTitle>
           <PanelDescription>{description}</PanelDescription>
         </div>
@@ -1306,8 +1330,8 @@ function BotDetailConfiguration({
   }
 
   return (
-    <div className="grid gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)] xl:pb-24">
-      <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
+    <div className="grid min-w-0 gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(0,1fr)] xl:pb-24">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
         <Panel className="h-fit lg:sticky lg:top-20">
           <PanelBody className="flex snap-x gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
             {configurationPanels.map((item) => {
@@ -1363,7 +1387,7 @@ function BotDetailConfiguration({
               title="Identity"
               description="Public naming, default greeting, and the compact avatar used across channels."
             >
-              <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
+              <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_120px]">
                 <Field label="Bot name">
                   <TextInput
                     value={config.name}
@@ -1440,8 +1464,10 @@ function BotDetailConfiguration({
               description="Provider, retrieval, and response controls for draft and published versions."
             >
               {activeCredentials.length === 0 && !isLoadingCredentials ? (
-                <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                  <span>No active provider key exists for this workspace.</span>
+                <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                  <span className="min-w-0 break-words">
+                    No active provider key exists for this workspace.
+                  </span>
                   <Button variant="secondary" size="sm" onClick={onOpenModelProviders}>
                     <KeyRound className="size-4" aria-hidden="true" />
                     Model Providers
@@ -1571,7 +1597,7 @@ function BotDetailConfiguration({
                       {isSaving ? 'Saving' : hasUnsavedChanges ? 'Unsaved' : 'Clean'}
                     </Badge>
                   </div>
-                  <p className="mt-2 truncate text-xs text-foreground">
+                  <p className="mt-2 break-words text-xs text-foreground [overflow-wrap:anywhere]">
                     {selectedCredential
                       ? `${getProviderLabel(selectedCredential.provider)} · ${selectedCredential.label}`
                       : 'No active credential selected'}
@@ -1661,7 +1687,7 @@ function BotDetailConfiguration({
         <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
           <PanelBody className="grid gap-3">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">Change state</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {hasUnsavedChanges ? 'Unsaved draft changes' : 'No pending changes'}
@@ -1679,7 +1705,7 @@ function BotDetailConfiguration({
               }`}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   {publishReadiness.tone === 'success' ? (
                     <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />
                   ) : (
@@ -1695,7 +1721,7 @@ function BotDetailConfiguration({
                 </div>
                 <Badge tone={publishReadiness.tone}>Publish</Badge>
               </div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+              <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
                 {publishReadiness.detail}
               </p>
             </div>
@@ -1804,6 +1830,65 @@ function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) 
   );
 }
 
+function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenBot(bot.id)}
+      className={`grid min-w-0 gap-3 border-b border-border p-4 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${
+        bot.status === 'Error' ? 'bg-danger/5' : ''
+      }`}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <BotAvatar bot={bot} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-start gap-2">
+            <p className="min-w-0 flex-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+              {bot.name}
+            </p>
+            <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
+          </div>
+          <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{bot.id}</p>
+          <p className="mt-2 break-words text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+            {bot.description}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid min-w-0 gap-2 rounded-md border border-border bg-surface-raised p-3 text-xs text-muted-foreground">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Environment</span>
+          <span className="min-w-0 break-words text-right text-foreground">{bot.environment}</span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Conversations</span>
+          <span className="font-mono text-foreground">{formatCount(bot.conversations)}</span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Model key</span>
+          <span className="min-w-0 break-words text-right text-foreground [overflow-wrap:anywhere]">
+            {getBotModelCredentialLabel(bot)}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Published</span>
+          <span className="min-w-0 break-words text-right text-foreground">
+            {bot.lastPublished}
+          </span>
+        </div>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <span className="shrink-0">Updated</span>
+          <span className="min-w-0 break-words text-right text-foreground [overflow-wrap:anywhere]">
+            {bot.updatedAt} by {bot.updatedBy}
+          </span>
+        </div>
+      </div>
+
+      {bot.error ? <p className="break-words text-xs text-danger">{bot.error}</p> : null}
+    </button>
+  );
+}
+
 function BotDetailScreen({
   activeTab,
   activeConfigurationPanel,
@@ -1824,48 +1909,48 @@ function BotDetailScreen({
   onOpenModelProviders: () => void;
 }) {
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-4 border-b border-border pb-4">
+    <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 gap-4 border-b border-border pb-4">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex w-fit items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+          className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
-          Bots
+          <span className="shrink-0">Bots</span>
           <span className="text-muted-foreground/60">/</span>
-          <span className="text-foreground">{bot.name}</span>
+          <span className="min-w-0 truncate text-foreground">{bot.name}</span>
         </button>
 
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 gap-3">
             <BotAvatar bot={bot} size="lg" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-normal text-foreground">
+                <h1 className="min-w-0 break-words text-2xl font-semibold tracking-normal text-foreground [overflow-wrap:anywhere]">
                   {bot.name}
                 </h1>
                 <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
               </div>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
                 {bot.description}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge tone="neutral" className="font-mono normal-case">
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge tone="neutral" className="max-w-full break-all font-mono normal-case">
                   {bot.id}
                 </Badge>
-                <span>{bot.environment}</span>
+                <span className="break-words">{bot.environment}</span>
                 <span className="text-muted-foreground/50">·</span>
-                <span>{bot.version}</span>
+                <span className="break-words">{bot.version}</span>
                 <span className="text-muted-foreground/50">·</span>
-                <span>
+                <span className="break-words [overflow-wrap:anywhere]">
                   Updated {bot.updatedAt} by {bot.updatedBy}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
             <Button variant="secondary" size="md">
               <Play className="size-4" aria-hidden="true" />
               Test
@@ -1911,16 +1996,23 @@ function BotDetailScreen({
 
 function BotsListScreen({
   bots,
+  initialQuery,
   onCreateBot,
   onOpenBot,
 }: {
   bots: BotRow[];
+  initialQuery: string;
   onCreateBot: () => void;
   onOpenBot: (botId: string) => void;
 }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<BotFilter>('All');
   const [sortBy, setSortBy] = useState<BotSort>('updated');
+
+  useEffect(() => {
+    setQuery(initialQuery);
+    setStatusFilter('All');
+  }, [initialQuery]);
 
   const filteredBots = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1929,10 +2021,7 @@ function BotsListScreen({
       .filter((bot) => {
         const matchesStatus = statusFilter === 'All' || bot.status === statusFilter;
         const matchesQuery =
-          normalizedQuery.length === 0 ||
-          [bot.name, bot.id, bot.description, bot.environment, bot.updatedBy].some((value) =>
-            value.toLowerCase().includes(normalizedQuery),
-          );
+          normalizedQuery.length === 0 || getBotSearchText(bot).includes(normalizedQuery);
 
         return matchesStatus && matchesQuery;
       })
@@ -1964,8 +2053,8 @@ function BotsListScreen({
   }
 
   return (
-    <div className="grid gap-4">
-      <Panel>
+    <div className="grid min-w-0 gap-4 overflow-hidden">
+      <Panel className="min-w-0 overflow-hidden">
         <PanelBody className="grid gap-4">
           <div className="grid gap-3">
             <div className="relative min-w-0">
@@ -1983,7 +2072,7 @@ function BotsListScreen({
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
+              <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
                 <Filter className="size-3.5" aria-hidden="true" />
                 Status
               </div>
@@ -2002,12 +2091,12 @@ function BotsListScreen({
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-muted-foreground">
+          <div className="grid min-w-0 gap-3 border-t border-border pt-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
+            <p className="min-w-0 text-sm text-muted-foreground">
               Showing <span className="font-medium text-foreground">{filteredBots.length}</span> of{' '}
               <span className="font-medium text-foreground">{bots.length}</span> bots
             </p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
               {[
                 ['updated', 'Recently updated'],
                 ['conversations', 'Most conversations'],
@@ -2029,9 +2118,9 @@ function BotsListScreen({
       </Panel>
 
       {filteredBots.length > 0 ? (
-        <Panel>
-          <PanelHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+        <Panel className="min-w-0 overflow-hidden">
+          <PanelHeader className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <PanelTitle>Bot inventory</PanelTitle>
               <PanelDescription>
                 Operational state, ownership, and publication freshness across workspace bots.
@@ -2041,16 +2130,30 @@ function BotsListScreen({
               Export CSV
             </Button>
           </PanelHeader>
-          <PanelBody className="p-0">
-            <DataTable className="table-fixed" wrapperClassName="rounded-none border-0">
+          <PanelBody className="grid gap-4 p-4">
+            <div className="-mx-4 -my-4 grid md:hidden">
+              {filteredBots.map((bot) => (
+                <BotsListCard key={bot.id} bot={bot} onOpenBot={onOpenBot} />
+              ))}
+            </div>
+            <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[38%]">Bot</TableHead>
-                  <TableHead className="w-[14%]">Status</TableHead>
-                  <TableHead className="w-[14%]">Environment</TableHead>
-                  <TableHead className="w-[12%] text-right">Conversations</TableHead>
-                  <TableHead className="w-[14%]">Published</TableHead>
-                  <TableHead className="w-[8%]">
+                  <TableHead className="w-[44%] px-3 sm:px-4">Bot</TableHead>
+                  <TableHead className="w-24 px-3 sm:px-4">Status</TableHead>
+                  <TableHead className="hidden w-28 px-3 lg:table-cell sm:px-4">
+                    Environment
+                  </TableHead>
+                  <TableHead className="hidden w-36 px-3 xl:table-cell sm:px-4">
+                    Model key
+                  </TableHead>
+                  <TableHead className="w-24 px-3 text-right sm:px-4">
+                    <span className="block truncate">Conversations</span>
+                  </TableHead>
+                  <TableHead className="hidden w-28 px-3 2xl:table-cell sm:px-4">
+                    Published
+                  </TableHead>
+                  <TableHead className="w-16 px-2 sm:px-3">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
@@ -2070,27 +2173,29 @@ function BotsListScreen({
                     }}
                     className={`cursor-pointer ${bot.status === 'Error' ? 'bg-danger/5' : ''}`}
                   >
-                    <TableCell className="min-w-0 whitespace-normal">
+                    <TableCell className="min-w-0 whitespace-normal px-3 sm:px-4">
                       <div className="flex items-center gap-3">
                         <BotAvatar bot={bot} size="sm" />
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{bot.name}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                          <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                            {bot.name}
+                          </p>
+                          <p className="mt-1 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                             {bot.id} · {bot.description}
                           </p>
-                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          <p className="mt-1 break-words text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
                             {bot.knowledge} · Updated {bot.updatedAt} by {bot.updatedBy}
                           </p>
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-normal">
+                    <TableCell className="whitespace-normal px-3 sm:px-4">
                       <StatusBadge status={bot.status} tone={botStatusTone[bot.status]} />
                       {bot.error ? (
-                        <p className="mt-2 text-[11px] text-danger">{bot.error}</p>
+                        <p className="mt-2 break-words text-[11px] text-danger">{bot.error}</p>
                       ) : null}
                     </TableCell>
-                    <TableCell className="whitespace-normal">
+                    <TableCell className="hidden whitespace-normal px-3 lg:table-cell sm:px-4">
                       <span className="inline-flex items-center gap-2 text-foreground">
                         <span
                           className={`size-1.5 rounded-full ${
@@ -2100,11 +2205,21 @@ function BotsListScreen({
                         {bot.environment}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-foreground">
+                    <TableCell className="hidden min-w-0 whitespace-normal px-3 xl:table-cell sm:px-4">
+                      <p className="break-words text-xs font-medium text-foreground [overflow-wrap:anywhere]">
+                        {getBotModelCredentialLabel(bot)}
+                      </p>
+                      <p className="mt-1 break-words font-mono text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
+                        {bot.modelConfig.model}
+                      </p>
+                    </TableCell>
+                    <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
                       {formatCount(bot.conversations)}
                     </TableCell>
-                    <TableCell className="whitespace-normal">{bot.lastPublished}</TableCell>
-                    <TableCell>
+                    <TableCell className="hidden whitespace-normal px-3 2xl:table-cell sm:px-4">
+                      {bot.lastPublished}
+                    </TableCell>
+                    <TableCell className="px-2 sm:px-3">
                       <div className="flex justify-end gap-1">
                         <IconButton
                           aria-label={`Open ${bot.name}`}
@@ -2155,638 +2270,13 @@ function BotsListScreen({
   );
 }
 
-function ProviderCredentialsScreen() {
-  const apiBaseUrl = useMemo(getApiBaseUrl, []);
-  const createKeyRef = useRef<HTMLInputElement>(null);
-  const rotateKeyRef = useRef<HTMLInputElement>(null);
-  const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [operation, setOperation] = useState<CredentialOperation>({ type: 'create' });
-  const [label, setLabel] = useState('Production OpenAI');
-  const [rotateLabel, setRotateLabel] = useState('');
-  const [pendingAction, setPendingAction] = useState<ProviderCredentialAction | null>(null);
-  const [pendingCredentialId, setPendingCredentialId] = useState<string | null>(null);
-  const [deleteCandidate, setDeleteCandidate] = useState<ProviderCredential | null>(null);
-  const [message, setMessage] = useState<ProviderCredentialsMessage | null>(null);
-
-  const canUseCredentialsApi = workspaceOrganisationId.trim().length > 0;
-  const activeCredentialCount = credentials.filter(
-    (credential) => credential.status === 'active',
-  ).length;
-  const invalidCredentialCount = credentials.filter(
-    (credential) => credential.status === 'invalid',
-  ).length;
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadCredentials() {
-      if (!canUseCredentialsApi) {
-        setIsLoading(false);
-        setMessage({
-          tone: 'warning',
-          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load provider credentials for this workspace.',
-        });
-        return;
-      }
-
-      setIsLoading(true);
-      setPendingAction('loading');
-      setMessage(null);
-
-      try {
-        const response = await fetch(
-          new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
-          { credentials: 'include' },
-        );
-
-        if (!response.ok) {
-          throw new Error(await parseApiError(response));
-        }
-
-        const payload = providerCredentialsResponseSchema.parse(await response.json());
-
-        if (isMounted) {
-          setCredentials(payload.credentials);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setMessage({
-            tone: 'danger',
-            text: error instanceof Error ? error.message : 'Could not load provider credentials.',
-          });
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-          setPendingAction(null);
-        }
-      }
-    }
-
-    void loadCredentials();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [apiBaseUrl, canUseCredentialsApi]);
-
-  function replaceCredential(nextCredential: ProviderCredential) {
-    setCredentials((currentCredentials) => {
-      const existingIndex = currentCredentials.findIndex(
-        (credential) => credential.id === nextCredential.id,
-      );
-
-      if (existingIndex === -1) {
-        return [...currentCredentials, nextCredential].toSorted((first, second) =>
-          first.label.localeCompare(second.label),
-        );
-      }
-
-      return currentCredentials.map((credential) =>
-        credential.id === nextCredential.id ? nextCredential : credential,
-      );
-    });
-  }
-
-  async function upsertCredential(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const isRotating = operation.type === 'rotate';
-    const keyInput = isRotating ? rotateKeyRef.current : createKeyRef.current;
-    const nextLabel = isRotating ? rotateLabel.trim() : label.trim();
-    const apiKey = keyInput?.value.trim() ?? '';
-
-    if (!canUseCredentialsApi) {
-      setMessage({
-        tone: 'warning',
-        text: 'Provider credentials need a configured workspace organisation id.',
-      });
-      return;
-    }
-
-    if (!nextLabel || !apiKey) {
-      setMessage({
-        tone: 'warning',
-        text: 'Add a label and API key before saving.',
-      });
-      return;
-    }
-
-    setPendingAction(isRotating ? 'rotating' : 'saving');
-    setPendingCredentialId(isRotating ? operation.credential.id : null);
-    setMessage(null);
-    keyInput?.form?.reset();
-
-    try {
-      const response = await fetch(
-        new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider: 'openai',
-            label: nextLabel,
-            apiKey,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(await parseApiError(response));
-      }
-
-      const credential = providerCredentialSchema.parse(await response.json());
-      replaceCredential(credential);
-      setOperation({ type: 'create' });
-      setRotateLabel('');
-      setLabel('Production OpenAI');
-      setMessage({
-        tone: credential.status === 'active' ? 'success' : 'danger',
-        text:
-          credential.status === 'active'
-            ? 'OpenAI key saved and validated.'
-            : 'OpenAI key was saved but validation failed. Rotate it with a working key.',
-      });
-    } catch (error) {
-      setMessage({
-        tone: 'danger',
-        text: error instanceof Error ? error.message : 'Could not save the provider credential.',
-      });
-    } finally {
-      setPendingAction(null);
-      setPendingCredentialId(null);
-    }
-  }
-
-  async function validateCredential(credential: ProviderCredential) {
-    setPendingAction('validating');
-    setPendingCredentialId(credential.id);
-    setMessage(null);
-
-    try {
-      const response = await fetch(
-        new URL(
-          `/organisations/${workspaceOrganisationId}/provider-credentials/${credential.id}/validate`,
-          apiBaseUrl,
-        ),
-        {
-          method: 'POST',
-          credentials: 'include',
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(await parseApiError(response));
-      }
-
-      const nextCredential = providerCredentialSchema.parse(await response.json());
-      replaceCredential(nextCredential);
-      setMessage({
-        tone: nextCredential.status === 'active' ? 'success' : 'danger',
-        text:
-          nextCredential.status === 'active'
-            ? `${nextCredential.label} validated successfully.`
-            : `${nextCredential.label} is not accepted by OpenAI. Rotate it before selecting models.`,
-      });
-    } catch (error) {
-      setMessage({
-        tone: 'danger',
-        text: error instanceof Error ? error.message : 'Could not validate the credential.',
-      });
-    } finally {
-      setPendingAction(null);
-      setPendingCredentialId(null);
-    }
-  }
-
-  async function deleteCredential() {
-    if (!deleteCandidate) {
-      return;
-    }
-
-    setPendingAction('deleting');
-    setPendingCredentialId(deleteCandidate.id);
-    setMessage(null);
-
-    try {
-      const response = await fetch(
-        new URL(
-          `/organisations/${workspaceOrganisationId}/provider-credentials/${deleteCandidate.id}`,
-          apiBaseUrl,
-        ),
-        {
-          method: 'DELETE',
-          credentials: 'include',
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(await parseApiError(response));
-      }
-
-      setCredentials((currentCredentials) =>
-        currentCredentials.filter((credential) => credential.id !== deleteCandidate.id),
-      );
-      setMessage({ tone: 'success', text: `${deleteCandidate.label} was removed.` });
-      setDeleteCandidate(null);
-    } catch (error) {
-      setMessage({
-        tone: 'danger',
-        text: error instanceof Error ? error.message : 'Could not remove the credential.',
-      });
-    } finally {
-      setPendingAction(null);
-      setPendingCredentialId(null);
-    }
-  }
-
-  function startRotation(credential: ProviderCredential) {
-    setOperation({ type: 'rotate', credential });
-    setRotateLabel(credential.label);
-    setMessage(null);
-    window.setTimeout(() => rotateKeyRef.current?.focus(), 0);
-  }
-
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Panel>
-          <PanelBody>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Connected keys</p>
-                <p className="mt-3 text-2xl font-semibold leading-none text-foreground">
-                  {credentials.length}
-                </p>
-              </div>
-              <KeyRound className="size-5 text-primary" aria-hidden="true" />
-            </div>
-          </PanelBody>
-        </Panel>
-        <Panel>
-          <PanelBody>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Active keys</p>
-                <p className="mt-3 text-2xl font-semibold leading-none text-success">
-                  {activeCredentialCount}
-                </p>
-              </div>
-              <CheckCircle2 className="size-5 text-success" aria-hidden="true" />
-            </div>
-          </PanelBody>
-        </Panel>
-        <Panel>
-          <PanelBody>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">Needs attention</p>
-                <p className="mt-3 text-2xl font-semibold leading-none text-warning">
-                  {invalidCredentialCount}
-                </p>
-              </div>
-              <TriangleAlert className="size-5 text-warning" aria-hidden="true" />
-            </div>
-          </PanelBody>
-        </Panel>
-      </div>
-
-      {message ? (
-        <div
-          className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
-            message.tone === 'success'
-              ? 'border-success/40 bg-success-muted text-success'
-              : message.tone === 'warning'
-                ? 'border-warning/40 bg-warning-muted text-warning'
-                : 'border-danger/40 bg-danger-muted text-danger'
-          }`}
-        >
-          {message.tone === 'success' ? (
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          ) : (
-            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          )}
-          <span>{message.text}</span>
-        </div>
-      ) : null}
-
-      <div className="grid gap-4 xl:grid-cols-[1.3fr_0.9fr]">
-        <Panel>
-          <PanelHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <PanelTitle>Provider credentials</PanelTitle>
-              <PanelDescription>
-                Safe metadata for workspace-owned model provider keys. Secrets are never returned by
-                the API after save.
-              </PanelDescription>
-            </div>
-            <Badge tone="primary">OpenAI first</Badge>
-          </PanelHeader>
-          <PanelBody className={credentials.length > 0 ? 'p-0' : undefined}>
-            {isLoading ? (
-              <div className="flex min-h-56 items-center justify-center gap-3 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
-                Loading provider credentials...
-              </div>
-            ) : credentials.length === 0 ? (
-              <EmptyState
-                title="No model provider keys connected"
-                description="Connect an OpenAI key before model configuration. BotDock will use your provider account for future chat and embedding spend."
-                action={
-                  <Button
-                    size="md"
-                    onClick={() => {
-                      setOperation({ type: 'create' });
-                      createKeyRef.current?.focus();
-                    }}
-                    disabled={!canUseCredentialsApi}
-                  >
-                    <Plus className="size-4" aria-hidden="true" />
-                    Connect OpenAI
-                  </Button>
-                }
-              />
-            ) : (
-              <DataTable wrapperClassName="rounded-none border-0">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Label</TableHead>
-                    <TableHead>Key preview</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last validated</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead>
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <tbody>
-                  {credentials.map((credential) => {
-                    const rowIsPending = pendingCredentialId === credential.id;
-
-                    return (
-                      <TableRow
-                        key={credential.id}
-                        className={credential.status === 'invalid' ? 'bg-danger/5' : undefined}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-foreground">
-                            <span className="flex size-8 items-center justify-center rounded-md border border-border bg-surface-raised">
-                              <KeyRound className="size-4 text-primary" aria-hidden="true" />
-                            </span>
-                            {getProviderLabel(credential.provider)}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-foreground">{credential.label}</TableCell>
-                        <TableCell>
-                          <span className="font-mono text-foreground">
-                            {credential.maskedKeyPreview}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            status={getProviderCredentialStatus(credential)}
-                            tone={getProviderCredentialTone(credential)}
-                          />
-                          {credential.status === 'invalid' ? (
-                            <p className="mt-2 text-[11px] text-danger">
-                              Rotate this key before using it for bot models.
-                            </p>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>{formatTimestamp(credential.lastValidatedAt)}</TableCell>
-                        <TableCell>{formatTimestamp(credential.updatedAt)}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <IconButton
-                              aria-label={`Validate ${credential.label}`}
-                              variant="ghost"
-                              size="sm"
-                              disabled={pendingAction !== null}
-                              onClick={() => void validateCredential(credential)}
-                            >
-                              {rowIsPending && pendingAction === 'validating' ? (
-                                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                              ) : (
-                                <ShieldCheck className="size-4" aria-hidden="true" />
-                              )}
-                            </IconButton>
-                            <IconButton
-                              aria-label={`Rotate ${credential.label}`}
-                              variant="ghost"
-                              size="sm"
-                              disabled={pendingAction !== null}
-                              onClick={() => startRotation(credential)}
-                            >
-                              <RefreshCw className="size-4" aria-hidden="true" />
-                            </IconButton>
-                            <IconButton
-                              aria-label={`Remove ${credential.label}`}
-                              variant="ghost"
-                              size="sm"
-                              disabled={pendingAction !== null}
-                              onClick={() => setDeleteCandidate(credential)}
-                            >
-                              <Trash2 className="size-4" aria-hidden="true" />
-                            </IconButton>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </tbody>
-              </DataTable>
-            )}
-          </PanelBody>
-        </Panel>
-
-        <div className="grid gap-4">
-          <Panel>
-            <PanelHeader>
-              <PanelTitle>
-                {operation.type === 'rotate' ? 'Rotate OpenAI key' : 'Connect OpenAI'}
-              </PanelTitle>
-              <PanelDescription>
-                Paste the key once. BotDock stores it encrypted and shows only the masked preview
-                returned by the API.
-              </PanelDescription>
-            </PanelHeader>
-            <PanelBody>
-              <form className="grid gap-4" onSubmit={(event) => void upsertCredential(event)}>
-                <Field label="Provider" hint="Additional model providers can reuse this layout.">
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55"
-                    defaultValue="openai"
-                    disabled
-                  >
-                    <option value="openai">OpenAI</option>
-                  </select>
-                </Field>
-
-                <Field
-                  label="Label"
-                  hint="Use a stable name; upsert rotation matches provider plus label."
-                >
-                  <TextInput
-                    value={operation.type === 'rotate' ? rotateLabel : label}
-                    onChange={(event) =>
-                      operation.type === 'rotate'
-                        ? setRotateLabel(event.target.value)
-                        : setLabel(event.target.value)
-                    }
-                    maxLength={80}
-                    placeholder="Production OpenAI"
-                    autoComplete="off"
-                  />
-                </Field>
-
-                <Field
-                  label="API key"
-                  hint={
-                    operation.type === 'rotate'
-                      ? 'Enter the replacement key. Existing secrets are never displayed.'
-                      : 'The value is sent to the API for validation and then cleared from the form.'
-                  }
-                >
-                  <div className="relative">
-                    <EyeOff
-                      className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                    <input
-                      ref={operation.type === 'rotate' ? rotateKeyRef : createKeyRef}
-                      type="password"
-                      className="h-9 w-full rounded-md border border-input bg-surface-raised px-3 pl-9 text-sm text-foreground shadow-surface-sm transition placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55"
-                      placeholder="sk-..."
-                      autoComplete="off"
-                    />
-                  </div>
-                </Field>
-
-                {operation.type === 'rotate' ? (
-                  <div className="rounded-md border border-warning/35 bg-warning-muted p-3 text-sm leading-6 text-warning">
-                    Replacing {operation.credential.label} keeps future bot model selection on the
-                    same credential label.
-                  </div>
-                ) : null}
-
-                <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={pendingAction !== null || !canUseCredentialsApi}>
-                    {pendingAction === 'saving' || pendingAction === 'rotating' ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                    ) : operation.type === 'rotate' ? (
-                      <RefreshCw className="size-4" aria-hidden="true" />
-                    ) : (
-                      <Plus className="size-4" aria-hidden="true" />
-                    )}
-                    {operation.type === 'rotate' ? 'Rotate key' : 'Save and test'}
-                  </Button>
-                  {operation.type === 'rotate' ? (
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      disabled={pendingAction !== null}
-                      onClick={() => {
-                        rotateKeyRef.current?.form?.reset();
-                        setOperation({ type: 'create' });
-                        setRotateLabel('');
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  ) : null}
-                </div>
-              </form>
-            </PanelBody>
-          </Panel>
-
-          <Panel>
-            <PanelHeader>
-              <PanelTitle>Model configuration readiness</PanelTitle>
-              <PanelDescription>
-                Future bot model settings will select from active provider credentials.
-              </PanelDescription>
-            </PanelHeader>
-            <PanelBody className="grid gap-3">
-              <div className="rounded-md border border-border bg-surface-raised p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-foreground">OpenAI provider</p>
-                  <StatusBadge
-                    status={activeCredentialCount > 0 ? 'Ready' : 'Not ready'}
-                    tone={activeCredentialCount > 0 ? 'success' : 'neutral'}
-                  />
-                </div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {activeCredentialCount > 0
-                    ? 'At least one active OpenAI key is available for upcoming model selection.'
-                    : 'Add and validate an OpenAI key before wiring bot-level model choices.'}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border bg-background p-4 text-sm leading-6 text-muted-foreground">
-                Provider keys belong to the workspace. BotDock should treat their spend as customer
-                BYOK usage when chat and knowledge tasks are wired later.
-              </div>
-            </PanelBody>
-          </Panel>
-        </div>
-      </div>
-
-      {deleteCandidate ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
-          <Panel className="w-full max-w-md">
-            <PanelHeader>
-              <PanelTitle>Remove provider key?</PanelTitle>
-              <PanelDescription>
-                This removes {deleteCandidate.label} from the workspace. Future model selection will
-                no longer be able to use this credential.
-              </PanelDescription>
-            </PanelHeader>
-            <PanelBody className="grid gap-4">
-              <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Preview</span>
-                  <span className="font-mono text-foreground">
-                    {deleteCandidate.maskedKeyPreview}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="secondary"
-                  type="button"
-                  disabled={pendingAction !== null}
-                  onClick={() => setDeleteCandidate(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="danger"
-                  type="button"
-                  disabled={pendingAction !== null}
-                  onClick={() => void deleteCredential()}
-                >
-                  {pendingAction === 'deleting' ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Trash2 className="size-4" aria-hidden="true" />
-                  )}
-                  Remove key
-                </Button>
-              </div>
-            </PanelBody>
-          </Panel>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ProviderCredentialsScreenCompact() {
+function ProviderCredentialsScreen({
+  onOpenLinkedBots,
+  onCredentialsChanged,
+}: {
+  onOpenLinkedBots: (credential: ProviderCredential) => void;
+  onCredentialsChanged: () => void;
+}) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
@@ -2925,6 +2415,7 @@ function ProviderCredentialsScreenCompact() {
 
       const credential = providerCredentialSchema.parse(await response.json());
       replaceCredential(credential);
+      onCredentialsChanged();
       setIsKeyModalOpen(false);
       setOperation({ type: 'create' });
       setRotateLabel('');
@@ -2971,6 +2462,7 @@ function ProviderCredentialsScreenCompact() {
 
       const nextCredential = providerCredentialSchema.parse(await response.json());
       replaceCredential(nextCredential);
+      onCredentialsChanged();
       setMessage({
         tone: nextCredential.status === 'active' ? 'success' : 'warning',
         text:
@@ -3017,6 +2509,7 @@ function ProviderCredentialsScreenCompact() {
       setCredentials((currentCredentials) =>
         currentCredentials.filter((credential) => credential.id !== deleteCandidate.id),
       );
+      onCredentialsChanged();
       setMessage({ tone: 'success', text: `${deleteCandidate.label} was removed.` });
       setDeleteCandidate(null);
     } catch (error) {
@@ -3090,6 +2583,7 @@ function ProviderCredentialsScreenCompact() {
                   <TableHead>Label</TableHead>
                   <TableHead>Key</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Bots</TableHead>
                   <TableHead>Last validated</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead>
@@ -3120,6 +2614,16 @@ function ProviderCredentialsScreenCompact() {
                           status={getProviderCredentialStatus(credential)}
                           tone={getProviderCredentialTone(credential)}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          className="rounded-sm font-mono text-foreground underline-offset-4 transition hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => onOpenLinkedBots(credential)}
+                          aria-label={`Show bots linked to ${credential.label}`}
+                        >
+                          {credential.linkedBotCount}
+                        </button>
                       </TableCell>
                       <TableCell>{formatTimestamp(credential.lastValidatedAt)}</TableCell>
                       <TableCell>{formatTimestamp(credential.updatedAt)}</TableCell>
@@ -3252,7 +2756,13 @@ function ProviderCredentialsScreenCompact() {
             <PanelHeader>
               <PanelTitle>Remove provider key?</PanelTitle>
               <PanelDescription>
-                This removes {deleteCandidate.label} from the workspace.
+                This removes {deleteCandidate.label} from the workspace
+                {deleteCandidate.linkedBotCount > 0
+                  ? ` and clears it from ${deleteCandidate.linkedBotCount} linked ${
+                      deleteCandidate.linkedBotCount === 1 ? 'bot' : 'bots'
+                    }`
+                  : ''}
+                .
               </PanelDescription>
             </PanelHeader>
             <PanelBody className="grid gap-4">
@@ -3261,6 +2771,12 @@ function ProviderCredentialsScreenCompact() {
                   <span className="text-muted-foreground">Key</span>
                   <span className="font-mono text-foreground">
                     {deleteCandidate.maskedKeyPreview}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-4 border-t border-border pt-3">
+                  <span className="text-muted-foreground">Linked bots</span>
+                  <span className="font-mono text-foreground">
+                    {deleteCandidate.linkedBotCount}
                   </span>
                 </div>
               </div>
@@ -3440,8 +2956,8 @@ function CreateBotModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
-      <Panel className="max-h-[92vh] w-full max-w-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto">
         <PanelHeader>
           <PanelTitle>Create bot</PanelTitle>
           <PanelDescription>
@@ -3449,17 +2965,17 @@ function CreateBotModal({
           </PanelDescription>
         </PanelHeader>
         <PanelBody>
-          <form className="grid gap-4" onSubmit={(event) => void createBot(event)}>
+          <form className="grid min-w-0 gap-4" onSubmit={(event) => void createBot(event)}>
             {message ? (
               <div
-                className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2 text-sm ${
                   message.tone === 'danger'
                     ? 'border-danger/40 bg-danger-muted text-danger'
                     : 'border-warning/40 bg-warning-muted text-warning'
                 }`}
               >
                 <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span>{message.text}</span>
+                <span className="min-w-0 break-words">{message.text}</span>
               </div>
             ) : null}
 
@@ -3509,8 +3025,8 @@ function CreateBotModal({
             </Field>
 
             {activeCredentials.length === 0 && !isLoadingCredentials ? (
-              <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                <span>
+              <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 break-words">
                   Create a draft now, then add a validated provider key before publishing.
                 </span>
                 <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
@@ -3719,6 +3235,7 @@ export function AppShell() {
     useState<BotConfigurationPanelId>(initialRoute.selectedBotConfigurationPanel);
   const [bots, setBots] = useState<BotRow[]>(botRows);
   const [botsMessage, setBotsMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [botsInitialQuery, setBotsInitialQuery] = useState('');
   const [isCreateBotOpen, setIsCreateBotOpen] = useState(false);
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -3734,6 +3251,40 @@ export function AppShell() {
   const ThemeIcon = theme === 'dark' ? Sun : Moon;
   const sessionDisplayName = getDisplayName(sessionUser);
   const sessionFirstName = getFirstName(sessionUser);
+
+  const loadBots = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setBotsMessage({
+        tone: 'warning',
+        text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load persisted bots.',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots`, apiBaseUrl),
+        { credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const payload = botsResponseSchema.parse(await response.json());
+
+      setBots(payload.bots.map(toBotRow));
+      setBotsMessage(null);
+    } catch (error) {
+      setBotsMessage({
+        tone: 'warning',
+        text:
+          error instanceof Error
+            ? `${error.message} Showing sample bots.`
+            : 'Could not load persisted bots. Showing sample bots.',
+      });
+    }
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(themeStorageKey);
@@ -3774,52 +3325,8 @@ export function AppShell() {
   }, [apiBaseUrl]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function loadBots() {
-      if (!workspaceOrganisationId.trim()) {
-        setBotsMessage({
-          tone: 'warning',
-          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load persisted bots.',
-        });
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          new URL(`/organisations/${workspaceOrganisationId}/bots`, apiBaseUrl),
-          { credentials: 'include' },
-        );
-
-        if (!response.ok) {
-          throw new Error(await parseApiError(response));
-        }
-
-        const payload = botsResponseSchema.parse(await response.json());
-
-        if (isMounted) {
-          setBots(payload.bots.map(toBotRow));
-          setBotsMessage(null);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setBotsMessage({
-            tone: 'warning',
-            text:
-              error instanceof Error
-                ? `${error.message} Showing sample bots.`
-                : 'Could not load persisted bots. Showing sample bots.',
-          });
-        }
-      }
-    }
-
     void loadBots();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [apiBaseUrl]);
+  }, [loadBots]);
 
   function replaceBot(updatedBot: BotRecord) {
     setBots((currentBots) => {
@@ -3852,6 +3359,16 @@ export function AppShell() {
     setIsCreateBotOpen(false);
   }
 
+  function openLinkedBots(credential: ProviderCredential) {
+    setBotsInitialQuery(credential.id);
+    applyDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
+    });
+  }
+
   function applyDashboardRoute(routeState: DashboardRouteState) {
     setActiveItemId(routeState.activeItemId);
     setSelectedBotId(routeState.selectedBotId);
@@ -3861,6 +3378,10 @@ export function AppShell() {
   }
 
   function openSection(sectionId: string) {
+    if (sectionId === 'bots') {
+      setBotsInitialQuery('');
+    }
+
     applyDashboardRoute({
       activeItemId: sectionId,
       selectedBotId: null,
@@ -3928,8 +3449,8 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="flex min-h-screen">
+    <div className="min-h-screen overflow-x-clip bg-background text-foreground">
+      <div className="flex min-h-screen min-w-0">
         <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
           <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
@@ -3974,28 +3495,28 @@ export function AppShell() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+          <main className="min-w-0 flex-1 overflow-x-clip overflow-y-auto">
+            <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 md:px-8 md:py-8">
               {selectedBot ? null : (
-                <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="mb-6 flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0">
+                    <div className="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
                       <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
-                      <span>Default workspace</span>
+                      <span className="min-w-0 truncate">Default workspace</span>
                     </div>
-                    <h1 className="text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
+                    <h1 className="break-words text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
                       {activeItemId === 'overview'
                         ? `Good afternoon, ${sessionFirstName}`
                         : activeItem.label}
                     </h1>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground">
                       {activeItemId === 'overview'
                         ? 'Create and manage multiple bots from your account.'
                         : activeItem.description}
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
                     <Button
                       variant="secondary"
                       size="md"
@@ -4013,7 +3534,7 @@ export function AppShell() {
                       <Bot className="size-4" aria-hidden="true" />
                       Create bot
                     </Button>
-                    <div className="relative">
+                    <div className="relative min-w-0">
                       <button
                         type="button"
                         className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-raised px-2.5 text-left text-sm font-semibold shadow-surface-sm transition hover:border-primary/50 hover:bg-muted"
@@ -4100,12 +3621,16 @@ export function AppShell() {
                   ) : null}
                   <BotsListScreen
                     bots={bots}
+                    initialQuery={botsInitialQuery}
                     onCreateBot={() => setIsCreateBotOpen(true)}
                     onOpenBot={openBot}
                   />
                 </div>
               ) : activeItemId === 'provider-keys' ? (
-                <ProviderCredentialsScreenCompact />
+                <ProviderCredentialsScreen
+                  onOpenLinkedBots={openLinkedBots}
+                  onCredentialsChanged={() => void loadBots()}
+                />
               ) : activeItemId === 'settings' ? (
                 <SettingsScreen user={sessionUser} />
               ) : (
