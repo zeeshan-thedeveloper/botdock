@@ -1899,9 +1899,74 @@ function getKnowledgeSourcesFixture(bot: BotRow): KnowledgeSource[] {
   ];
 }
 
+const knowledgeAllowedFileExtensions = ['.txt', '.md', '.csv', '.json', '.pdf'];
+const knowledgeMaxFileSizeBytes = 20 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes}B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function getKnowledgeFileValidationError(file: File): string | null {
+  const name = file.name.toLowerCase();
+  const hasAllowedExtension = knowledgeAllowedFileExtensions.some((extension) =>
+    name.endsWith(extension),
+  );
+
+  if (!hasAllowedExtension) {
+    return 'Unsupported file type. Use PDF, TXT, Markdown, CSV, or JSON.';
+  }
+
+  if (file.size > knowledgeMaxFileSizeBytes) {
+    return 'File exceeds the 20MB upload limit.';
+  }
+
+  return null;
+}
+
+function buildMockKnowledgeSource(
+  bot: BotRow,
+  input: { name: string; type: KnowledgeSourceType },
+): KnowledgeSource {
+  const now = new Date().toISOString();
+
+  return {
+    id: `${bot.id}-source-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`,
+    organisationId: workspaceOrganisationId,
+    botId: bot.id,
+    type: input.type,
+    name: input.name,
+    status: 'processing',
+    embeddingProvider: 'openai',
+    embeddingModel: 'text-embedding-3-small',
+    chunkCount: 0,
+    errorMessage: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function BotDetailKnowledge({ bot }: { bot: BotRow }) {
-  const [sources] = useState<KnowledgeSource[]>(() => getKnowledgeSourcesFixture(bot));
+  const [sources, setSources] = useState<KnowledgeSource[]>(() => getKnowledgeSourcesFixture(bot));
+  const [addContentType, setAddContentType] = useState<'text' | 'faq' | null>(null);
+  const [uploadQueueFiles, setUploadQueueFiles] = useState<File[] | null>(null);
+  const [isDropzoneActive, setIsDropzoneActive] = useState(false);
   const totalChunks = sources.reduce((sum, source) => sum + source.chunkCount, 0);
+
+  function addSource(input: { name: string; type: KnowledgeSourceType }) {
+    setSources((current) => [buildMockKnowledgeSource(bot, input), ...current]);
+  }
+
+  function removeSource(id: string) {
+    setSources((current) => current.filter((source) => source.id !== id));
+  }
 
   return (
     <div className="grid gap-4">
@@ -1915,28 +1980,53 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
             </PanelDescription>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => setAddContentType('text')}>
               <Plus className="size-4" aria-hidden="true" />
               Add text
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => setAddContentType('faq')}>
               <Plus className="size-4" aria-hidden="true" />
               Add FAQ
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => setUploadQueueFiles([])}>
               <Upload className="size-4" aria-hidden="true" />
               Upload files
             </Button>
           </div>
         </PanelHeader>
         <PanelBody className="grid gap-4">
-          <div className="rounded-lg border border-dashed border-border bg-surface/70 p-8 text-center">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setUploadQueueFiles([])}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setUploadQueueFiles([]);
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDropzoneActive(true);
+            }}
+            onDragLeave={() => setIsDropzoneActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsDropzoneActive(false);
+              if (event.dataTransfer.files.length > 0) {
+                setUploadQueueFiles(Array.from(event.dataTransfer.files));
+              }
+            }}
+            className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
+              isDropzoneActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+            }`}
+          >
             <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
             <p className="mt-3 text-sm font-medium text-foreground">
               Drag and drop files, or click to browse
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              PDF, TXT, Markdown · up to 20MB per file
+              PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
             </p>
           </div>
 
@@ -2024,6 +2114,7 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
                             aria-label={`Delete ${source.name}`}
                             variant="ghost"
                             size="sm"
+                            onClick={() => removeSource(source.id)}
                           >
                             <Trash2 className="size-4" aria-hidden="true" />
                           </IconButton>
@@ -2039,6 +2130,268 @@ function BotDetailKnowledge({ bot }: { bot: BotRow }) {
           <p className="text-xs text-muted-foreground">
             Website, Notion, Google Drive, and GitHub sources are coming soon.
           </p>
+        </PanelBody>
+      </Panel>
+
+      {addContentType ? (
+        <AddKnowledgeContentModal
+          type={addContentType}
+          onClose={() => setAddContentType(null)}
+          onSave={(input) => addSource({ name: input.name, type: addContentType })}
+        />
+      ) : null}
+
+      {uploadQueueFiles ? (
+        <UploadKnowledgeFilesModal
+          initialFiles={uploadQueueFiles}
+          onClose={() => setUploadQueueFiles(null)}
+          onFilesQueued={(files) => {
+            for (const file of files) {
+              addSource({ name: file.name, type: 'file' });
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type QueuedKnowledgeFile = {
+  id: string;
+  file: File;
+  error: string | null;
+};
+
+function AddKnowledgeContentModal({
+  type,
+  onClose,
+  onSave,
+}: {
+  type: 'text' | 'faq';
+  onClose: () => void;
+  onSave: (input: { name: string; content: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [content, setContent] = useState('');
+  const isFaq = type === 'faq';
+  const canSave = name.trim().length > 0 && content.trim().length > 0;
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!canSave) {
+      return;
+    }
+
+    onSave({ name: name.trim(), content: content.trim() });
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto">
+        <PanelHeader>
+          <PanelTitle>{isFaq ? 'Add FAQ' : 'Add text'}</PanelTitle>
+          <PanelDescription>
+            {isFaq
+              ? 'Add question-and-answer content this bot can cite directly.'
+              : 'Paste reference text this bot can search and cite from.'}
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody>
+          <form className="grid gap-4" onSubmit={handleSubmit}>
+            <Field label="Name">
+              <TextInput
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={isFaq ? 'Shipping FAQ' : 'Account & billing notes'}
+                autoFocus
+              />
+            </Field>
+            <Field
+              label={isFaq ? 'Questions and answers' : 'Content'}
+              hint={isFaq ? 'One question per line, followed by its answer.' : undefined}
+            >
+              <TextArea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder={
+                  isFaq
+                    ? 'Q: How long does shipping take?\nA: Standard shipping takes 3-5 business days.'
+                    : 'Paste the reference text for this bot to answer from...'
+                }
+                className="min-h-40"
+              />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+              <Button variant="secondary" type="button" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canSave}>
+                <Plus className="size-4" aria-hidden="true" />
+                {isFaq ? 'Add FAQ' : 'Add text'}
+              </Button>
+            </div>
+          </form>
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
+function UploadKnowledgeFilesModal({
+  initialFiles,
+  onClose,
+  onFilesQueued,
+}: {
+  initialFiles: File[];
+  onClose: () => void;
+  onFilesQueued: (files: File[]) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [queue, setQueue] = useState<QueuedKnowledgeFile[]>(() => toQueuedFiles(initialFiles));
+  const validFiles = queue.filter((item) => !item.error);
+  const hasInvalidFiles = queue.some((item) => item.error);
+
+  function toQueuedFiles(files: File[]): QueuedKnowledgeFile[] {
+    return files.map((file) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}`,
+      file,
+      error: getKnowledgeFileValidationError(file),
+    }));
+  }
+
+  function addFiles(files: FileList | File[]) {
+    setQueue((current) => {
+      const existingIds = new Set(current.map((item) => item.id));
+      const nextItems = toQueuedFiles(Array.from(files)).filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...current, ...nextItems];
+    });
+  }
+
+  function removeFile(id: string) {
+    setQueue((current) => current.filter((item) => item.id !== id));
+  }
+
+  function handleUpload() {
+    if (validFiles.length === 0) {
+      return;
+    }
+
+    onFilesQueued(validFiles.map((item) => item.file));
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto">
+        <PanelHeader>
+          <PanelTitle>Upload files</PanelTitle>
+          <PanelDescription>
+            PDF, TXT, Markdown, CSV, or JSON · up to 20MB per file.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragActive(true);
+            }}
+            onDragLeave={() => setIsDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsDragActive(false);
+              if (event.dataTransfer.files.length > 0) {
+                addFiles(event.dataTransfer.files);
+              }
+            }}
+            className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
+              isDragActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+            }`}
+          >
+            <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-foreground">
+              Drag and drop files, or click to browse
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) {
+                  addFiles(event.target.files);
+                  event.target.value = '';
+                }
+              }}
+            />
+          </div>
+
+          {queue.length > 0 ? (
+            <div className="grid gap-2">
+              {queue.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-surface-raised px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {item.file.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {formatFileSize(item.file.size)}
+                      {item.error ? <span className="text-danger"> · {item.error}</span> : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusBadge
+                      status={item.error ? 'Failed' : 'Queued'}
+                      tone={item.error ? 'danger' : 'neutral'}
+                    />
+                    <IconButton
+                      aria-label={`Remove ${item.file.name}`}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(item.id)}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </IconButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {hasInvalidFiles ? (
+            <p className="text-xs text-danger">Remove or replace invalid files before uploading.</p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+            <Button variant="secondary" type="button" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="button" disabled={validFiles.length === 0} onClick={handleUpload}>
+              <Upload className="size-4" aria-hidden="true" />
+              Upload {validFiles.length > 0 ? validFiles.length : ''} file
+              {validFiles.length === 1 ? '' : 's'}
+            </Button>
+          </div>
         </PanelBody>
       </Panel>
     </div>
