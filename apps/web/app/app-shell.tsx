@@ -4,9 +4,17 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   authSessionResponseSchema,
+  botSchema,
+  botsResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
   type AuthSessionUser,
+  type Bot as BotRecord,
+  type BotBehaviorConfig,
+  type BotCitationStyle,
+  type BotModelConfig,
+  type BotResponseLength,
+  type BotRetrievalMode,
   type ModelProvider,
   type ProviderCredential,
 } from '@botdock/contracts';
@@ -16,9 +24,7 @@ import {
   ArrowLeft,
   BarChart3,
   Brain,
-  BookOpen,
   Bot,
-  Boxes,
   ChevronDown,
   CheckCircle2,
   Copy,
@@ -50,7 +56,6 @@ import {
 import {
   Badge,
   Button,
-  CodeBlock,
   DataTable,
   EmptyState,
   Field,
@@ -128,29 +133,6 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: 'Build',
-    items: [
-      {
-        id: 'knowledge',
-        label: 'Knowledge',
-        icon: BookOpen,
-        description: 'Documents, URLs, FAQs, and ingestion state.',
-      },
-      {
-        id: 'playground',
-        label: 'Playground',
-        icon: Play,
-        description: 'Test prompts, retrieval traces, and draft behavior.',
-      },
-      {
-        id: 'deployments',
-        label: 'Deployments',
-        icon: Boxes,
-        description: 'Environment versions, rollout state, and errors.',
-      },
-    ],
-  },
-  {
     title: 'Operations',
     items: [
       {
@@ -209,6 +191,7 @@ type BotDetailTab =
   | 'analytics'
   | 'deployments'
   | 'settings';
+type BotConfigurationPanelId = 'identity' | 'instructions' | 'model' | 'conversation' | 'safety';
 
 type BotRow = {
   id: string;
@@ -216,6 +199,8 @@ type BotRow = {
   description: string;
   initials: string;
   status: BotStatus;
+  behaviorConfig: BotBehaviorConfig;
+  modelConfig: BotModelConfig;
   environment: string;
   knowledge: string;
   conversations: number;
@@ -227,6 +212,7 @@ type BotRow = {
   lastPublished: string;
   updatedBy: string;
   updatedAt: string;
+  updatedAtTimestamp?: string;
   error?: string;
 };
 
@@ -240,6 +226,59 @@ type ProviderCredentialsMessage = {
 };
 
 const workspaceOrganisationId = process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '';
+
+const defaultBotModelConfig: BotModelConfig = {
+  providerCredentialId: null,
+  provider: null,
+  credentialLabel: null,
+  model: 'gpt-4o-mini',
+  temperature: 0.35,
+  responseLength: 'balanced',
+  retrievalMode: 'hybrid',
+  maxSources: 6,
+  citationStyle: 'inline_source_chips',
+};
+
+const defaultBotBehaviorConfig: BotBehaviorConfig = {
+  initials: 'BD',
+  welcomeMessage: "Hi! I'm here to help with orders, returns, and account questions.",
+  instructions: `You are a customer support assistant for this account.
+Answer only using the provided knowledge sources.
+Be concise, friendly, and professional.
+If policy details conflict, prefer the most recent source.
+Escalate billing disputes, account access issues, and refund exceptions.`,
+  tone: 'Friendly, precise, and calm',
+  handoffBehavior: 'Escalate after low-confidence answer',
+  widgetTheme: 'Dark system default',
+  widgetPosition: 'Bottom right',
+  strictKnowledge: true,
+  promptInjectionProtection: true,
+  piiRedaction: true,
+  collectFeedback: true,
+  humanHandoff: true,
+};
+
+const modelOptionsByProvider: Record<ModelProvider, string[]> = {
+  openai: ['gpt-4o-mini', 'gpt-4o', 'o4-mini'],
+};
+
+const responseLengthLabels: Record<BotResponseLength, string> = {
+  brief: 'Brief',
+  balanced: 'Balanced',
+  detailed: 'Detailed',
+};
+
+const retrievalModeLabels: Record<BotRetrievalMode, string> = {
+  hybrid: 'Hybrid semantic + keyword',
+  semantic: 'Semantic only',
+  keyword: 'Keyword exact-match first',
+};
+
+const citationStyleLabels: Record<BotCitationStyle, string> = {
+  inline_source_chips: 'Inline source chips',
+  footer_source_list: 'Footer source list',
+  hidden: 'Hidden from visitors',
+};
 
 function getProviderLabel(provider: ModelProvider) {
   if (provider === 'openai') {
@@ -298,6 +337,70 @@ async function parseApiError(response: Response) {
   }
 }
 
+function getBotInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ''}${parts[1]?.[0] ?? ''}`.toUpperCase();
+  }
+
+  return name.trim().slice(0, 2).toUpperCase() || 'BD';
+}
+
+function getRelativeTimestamp(value: string) {
+  const deltaMs = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(0, Math.round(deltaMs / 60000));
+
+  if (minutes < 60) {
+    return `${minutes || 1}m ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function toBotStatus(status: BotRecord['status']): BotStatus {
+  if (status === 'published') {
+    return 'Published';
+  }
+
+  if (status === 'archived') {
+    return 'Disabled';
+  }
+
+  return 'Draft';
+}
+
+function toBotRow(bot: BotRecord): BotRow {
+  return {
+    id: bot.id,
+    name: bot.name,
+    description: bot.description ?? 'No description',
+    initials: bot.behaviorConfig.initials || getBotInitials(bot.name),
+    status: toBotStatus(bot.status),
+    behaviorConfig: bot.behaviorConfig,
+    modelConfig: bot.modelConfig,
+    environment: bot.status === 'published' ? 'Production' : 'Draft',
+    knowledge: 'No sources connected',
+    conversations: 0,
+    version: bot.status === 'published' ? 'Published' : 'Draft',
+    resolutionRate: '0%',
+    feedbackRate: '0%',
+    estimatedCost: '$0.00',
+    errorRate: '0.00%',
+    lastPublished:
+      bot.status === 'published' ? getRelativeTimestamp(bot.updatedAt) : 'Not published',
+    updatedBy: 'Workspace',
+    updatedAt: getRelativeTimestamp(bot.updatedAt),
+    updatedAtTimestamp: bot.updatedAt,
+  };
+}
+
 const botRows: BotRow[] = [
   {
     id: 'bot_7f3a1',
@@ -305,6 +408,8 @@ const botRows: BotRow[] = [
     description: 'Production customer support widget',
     initials: 'SA',
     status: 'Published',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'SA' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Production',
     knowledge: '3 sources · 1,284 chunks',
     conversations: 16204,
@@ -323,6 +428,8 @@ const botRows: BotRow[] = [
     description: 'Answers API and SDK implementation questions',
     initials: 'DA',
     status: 'Processing',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'DA' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Staging',
     knowledge: '7 sources · indexing',
     conversations: 11850,
@@ -341,6 +448,8 @@ const botRows: BotRow[] = [
     description: 'Routes high-intent leads to the revenue team',
     initials: 'SQ',
     status: 'Draft',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'SQ' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Draft',
     knowledge: '2 sources · 318 chunks',
     conversations: 4302,
@@ -359,6 +468,8 @@ const botRows: BotRow[] = [
     description: 'Employee-facing policy and billing reference',
     initials: 'IK',
     status: 'Error',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'IK' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Preview',
     knowledge: '4 sources · sync failed',
     conversations: 924,
@@ -378,6 +489,8 @@ const botRows: BotRow[] = [
     description: 'Guides new accounts through workspace setup',
     initials: 'OH',
     status: 'Published',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'OH' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Production',
     knowledge: '5 sources · 842 chunks',
     conversations: 6120,
@@ -396,6 +509,8 @@ const botRows: BotRow[] = [
     description: 'Paused experiment for account health reviews',
     initials: 'CR',
     status: 'Disabled',
+    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'CR' },
+    modelConfig: defaultBotModelConfig,
     environment: 'Sandbox',
     knowledge: '1 source · 96 chunks',
     conversations: 288,
@@ -431,6 +546,12 @@ const botDetailTabs: Array<{ id: BotDetailTab; label: string }> = [
   { id: 'settings', label: 'Settings' },
 ];
 
+type DashboardRouteState = {
+  activeItemId: string;
+  selectedBotId: string | null;
+  selectedBotTab: BotDetailTab;
+};
+
 const botKnowledgeHealth = [
   { label: 'Indexed chunks', value: '1,284', progress: 92 },
   { label: 'Citation coverage', value: '96.2%', progress: 96 },
@@ -445,12 +566,13 @@ type BotConfiguration = {
   instructions: string;
   tone: string;
   handoffBehavior: string;
-  providerModel: string;
+  providerCredentialId: string | null;
+  model: string;
   temperature: number;
-  retrievalMode: string;
-  maxSources: string;
-  responseLength: string;
-  citationStyle: string;
+  retrievalMode: BotRetrievalMode;
+  maxSources: number;
+  responseLength: BotResponseLength;
+  citationStyle: BotCitationStyle;
   widgetTheme: string;
   widgetPosition: string;
   strictKnowledge: boolean;
@@ -460,34 +582,29 @@ type BotConfiguration = {
   humanHandoff: boolean;
 };
 
-const promptTemplate = `You are a customer support assistant for this account.
-Answer only using the provided knowledge sources.
-Be concise, friendly, and professional.
-If policy details conflict, prefer the most recent source.
-Escalate billing disputes, account access issues, and refund exceptions.`;
-
 function getBotConfiguration(bot: BotRow): BotConfiguration {
   return {
     name: bot.name,
     description: bot.description,
-    initials: bot.initials,
-    welcomeMessage: "Hi! I'm here to help with orders, returns, and account questions.",
-    instructions: promptTemplate,
-    tone: 'Friendly, precise, and calm',
-    handoffBehavior: 'Escalate after low-confidence answer',
-    providerModel: 'OpenAI · gpt-4o-mini',
-    temperature: 0.35,
-    retrievalMode: 'Hybrid semantic + keyword',
-    maxSources: '6 sources',
-    responseLength: 'Balanced',
-    citationStyle: 'Inline source chips',
-    widgetTheme: 'Dark system default',
-    widgetPosition: 'Bottom right',
-    strictKnowledge: true,
-    promptInjectionProtection: true,
-    piiRedaction: true,
-    collectFeedback: true,
-    humanHandoff: bot.status !== 'Disabled',
+    initials: bot.behaviorConfig.initials,
+    welcomeMessage: bot.behaviorConfig.welcomeMessage,
+    instructions: bot.behaviorConfig.instructions,
+    tone: bot.behaviorConfig.tone,
+    handoffBehavior: bot.behaviorConfig.handoffBehavior,
+    providerCredentialId: bot.modelConfig.providerCredentialId,
+    model: bot.modelConfig.model,
+    temperature: bot.modelConfig.temperature,
+    retrievalMode: bot.modelConfig.retrievalMode,
+    maxSources: bot.modelConfig.maxSources,
+    responseLength: bot.modelConfig.responseLength,
+    citationStyle: bot.modelConfig.citationStyle,
+    widgetTheme: bot.behaviorConfig.widgetTheme,
+    widgetPosition: bot.behaviorConfig.widgetPosition,
+    strictKnowledge: bot.behaviorConfig.strictKnowledge,
+    promptInjectionProtection: bot.behaviorConfig.promptInjectionProtection,
+    piiRedaction: bot.behaviorConfig.piiRedaction,
+    collectFeedback: bot.behaviorConfig.collectFeedback,
+    humanHandoff: bot.behaviorConfig.humanHandoff,
   };
 }
 
@@ -507,6 +624,71 @@ function getNavItem(id: string): NavItem {
   }
 
   return defaultNavItem;
+}
+
+function isNavItemId(value: string | null): value is string {
+  if (!value) {
+    return false;
+  }
+
+  return (
+    value === settingsNavItem.id ||
+    navGroups.some((group) => group.items.some((item) => item.id === value))
+  );
+}
+
+function isBotDetailTab(value: string | null): value is BotDetailTab {
+  return Boolean(value && botDetailTabs.some((tab) => tab.id === value));
+}
+
+function getInitialDashboardRoute(): DashboardRouteState {
+  if (typeof window === 'undefined') {
+    return { activeItemId: 'overview', selectedBotId: null, selectedBotTab: 'overview' };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const selectedBotId = params.get('bot');
+
+  if (selectedBotId) {
+    const selectedBotTab = params.get('tab');
+
+    return {
+      activeItemId: 'bots',
+      selectedBotId,
+      selectedBotTab: isBotDetailTab(selectedBotTab) ? selectedBotTab : 'overview',
+    };
+  }
+
+  const section = params.get('section');
+  const activeItemId = isNavItemId(section) ? section : 'overview';
+
+  return {
+    activeItemId,
+    selectedBotId: null,
+    selectedBotTab: 'overview',
+  };
+}
+
+function writeDashboardRoute(routeState: DashboardRouteState) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const params = new URLSearchParams();
+
+  if (routeState.selectedBotId) {
+    params.set('section', 'bots');
+    params.set('bot', routeState.selectedBotId);
+
+    if (routeState.selectedBotTab !== 'overview') {
+      params.set('tab', routeState.selectedBotTab);
+    }
+  } else if (routeState.activeItemId !== 'overview') {
+    params.set('section', routeState.activeItemId);
+  }
+
+  const query = params.toString();
+  window.history.replaceState(null, '', query ? `/?${query}` : '/');
 }
 
 function getApiBaseUrl() {
@@ -667,13 +849,13 @@ function formatCount(value: number) {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
-function BotsEmptyState() {
+function BotsEmptyState({ onCreateBot }: { onCreateBot: () => void }) {
   return (
     <EmptyState
       title="No bots in this workspace"
       description="Create the first bot to connect knowledge, test responses, and publish a production-ready assistant."
       action={
-        <Button size="md">
+        <Button size="md" onClick={onCreateBot}>
           <Plus className="size-4" aria-hidden="true" />
           Create bot
         </Button>
@@ -778,7 +960,7 @@ function SelectInput({
 }: ComponentPropsWithoutRef<'select'> & { className?: string }) {
   return (
     <select
-      className={`h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 ${className}`}
+      className={`h-9 w-full rounded-md border border-input bg-surface-raised px-3 text-sm text-foreground shadow-surface-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-55 ${className}`}
       {...props}
     />
   );
@@ -848,10 +1030,105 @@ function ConfigurationSection({
   );
 }
 
-function BotDetailConfiguration({ bot }: { bot: BotRow }) {
+function BotDetailConfiguration({
+  bot,
+  onBotUpdated,
+  onOpenModelProviders,
+}: {
+  bot: BotRow;
+  onBotUpdated: (bot: BotRecord) => void;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
   const [config, setConfig] = useState<BotConfiguration>(initialConfig);
+  const [activeConfigurationPanel, setActiveConfigurationPanel] =
+    useState<BotConfigurationPanelId>('identity');
+  const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
+  const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<ProviderCredentialsMessage | null>(null);
   const hasUnsavedChanges = JSON.stringify(config) !== JSON.stringify(initialConfig);
+  const activeCredentials = credentials.filter((credential) => credential.status === 'active');
+  const selectedCredential =
+    activeCredentials.find((credential) => credential.id === config.providerCredentialId) ?? null;
+  const modelOptions = selectedCredential
+    ? modelOptionsByProvider[selectedCredential.provider]
+    : modelOptionsByProvider.openai;
+  const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+  const configurationPanels: Array<{
+    id: BotConfigurationPanelId;
+    label: string;
+    icon: LucideIcon;
+  }> = [
+    { id: 'identity', label: 'Identity', icon: Bot },
+    { id: 'instructions', label: 'Instructions', icon: FileText },
+    { id: 'model', label: 'Model', icon: Brain },
+    { id: 'conversation', label: 'Conversation', icon: MessageSquareText },
+    { id: 'safety', label: 'Safety', icon: ShieldCheck },
+  ];
+
+  useEffect(() => {
+    setConfig(initialConfig);
+  }, [initialConfig]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCredentials() {
+      if (!workspaceOrganisationId.trim()) {
+        setIsLoadingCredentials(false);
+        setSaveMessage({
+          tone: 'warning',
+          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID before selecting model providers.',
+        });
+        return;
+      }
+
+      setIsLoadingCredentials(true);
+
+      try {
+        const response = await fetch(
+          new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
+          { credentials: 'include' },
+        );
+
+        if (!response.ok) {
+          throw new Error(await parseApiError(response));
+        }
+
+        const payload = providerCredentialsResponseSchema.parse(await response.json());
+
+        if (isMounted) {
+          const nextActiveCredentials = payload.credentials.filter(
+            (credential) => credential.status === 'active',
+          );
+          setCredentials(payload.credentials);
+
+          if (!config.providerCredentialId && nextActiveCredentials[0]) {
+            updateConfig('providerCredentialId', nextActiveCredentials[0].id);
+          }
+        }
+      } catch (error) {
+        if (isMounted) {
+          setSaveMessage({
+            tone: 'danger',
+            text: error instanceof Error ? error.message : 'Could not load provider credentials.',
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCredentials(false);
+        }
+      }
+    }
+
+    void loadCredentials();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, config.providerCredentialId]);
 
   function updateConfig<Key extends keyof BotConfiguration>(
     key: Key,
@@ -860,260 +1137,429 @@ function BotDetailConfiguration({ bot }: { bot: BotRow }) {
     setConfig((current) => ({ ...current, [key]: value }));
   }
 
+  async function saveConfiguration() {
+    if (!workspaceOrganisationId.trim()) {
+      setSaveMessage({
+        tone: 'warning',
+        text: 'Bot configuration needs a configured workspace organisation id.',
+      });
+      return;
+    }
+
+    if (!config.providerCredentialId) {
+      setSaveMessage({
+        tone: 'warning',
+        text: 'Select an active provider credential before saving model settings.',
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}`, apiBaseUrl),
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: config.name,
+            description: config.description,
+            behaviorConfig: {
+              initials: config.initials,
+              welcomeMessage: config.welcomeMessage,
+              instructions: config.instructions,
+              tone: config.tone,
+              handoffBehavior: config.handoffBehavior,
+              widgetTheme: config.widgetTheme,
+              widgetPosition: config.widgetPosition,
+              strictKnowledge: config.strictKnowledge,
+              promptInjectionProtection: config.promptInjectionProtection,
+              piiRedaction: config.piiRedaction,
+              collectFeedback: config.collectFeedback,
+              humanHandoff: config.humanHandoff,
+            },
+            modelConfig: {
+              providerCredentialId: config.providerCredentialId,
+              model: config.model,
+              temperature: config.temperature,
+              responseLength: config.responseLength,
+              retrievalMode: config.retrievalMode,
+              maxSources: config.maxSources,
+              citationStyle: config.citationStyle,
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const updatedBot = botSchema.parse(await response.json());
+      onBotUpdated(updatedBot);
+      setSaveMessage({ tone: 'success', text: 'Bot model configuration saved.' });
+    } catch (error) {
+      setSaveMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not save bot configuration.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <div className="grid gap-4 pb-20 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
-      <div className="grid gap-4">
-        <ConfigurationSection
-          icon={Bot}
-          title="Identity"
-          description="Public naming, default greeting, and the compact avatar used across channels."
-        >
-          <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
-            <Field label="Bot name">
-              <TextInput
-                value={config.name}
-                onChange={(event) => updateConfig('name', event.target.value)}
-              />
-            </Field>
-            <Field label="Initials">
-              <TextInput
-                value={config.initials}
-                maxLength={3}
-                onChange={(event) => updateConfig('initials', event.target.value.toUpperCase())}
-                className="font-mono"
-              />
-            </Field>
-          </div>
-          <Field label="Description">
-            <TextInput
-              value={config.description}
-              onChange={(event) => updateConfig('description', event.target.value)}
-            />
-          </Field>
-          <Field label="Welcome message">
-            <TextArea
-              value={config.welcomeMessage}
-              onChange={(event) => updateConfig('welcomeMessage', event.target.value)}
-              className="min-h-20"
-            />
-          </Field>
-        </ConfigurationSection>
+      <div className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
+        <Panel className="h-fit lg:sticky lg:top-20">
+          <PanelBody className="grid gap-1 p-2">
+            {configurationPanels.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeConfigurationPanel === item.id;
 
-        <ConfigurationSection
-          icon={FileText}
-          title="Instructions"
-          description="System prompt, conversational posture, and escalation intent for production answers."
-        >
-          <Field label="System instructions">
-            <TextArea
-              value={config.instructions}
-              onChange={(event) => updateConfig('instructions', event.target.value)}
-              className="min-h-48 font-mono text-xs leading-6"
-            />
-          </Field>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Tone">
-              <SelectInput
-                value={config.tone}
-                onChange={(event) => updateConfig('tone', event.target.value)}
-              >
-                <option>Friendly, precise, and calm</option>
-                <option>Concise and technical</option>
-                <option>Warm and consultative</option>
-              </SelectInput>
-            </Field>
-            <Field label="Handoff behavior">
-              <SelectInput
-                value={config.handoffBehavior}
-                onChange={(event) => updateConfig('handoffBehavior', event.target.value)}
-              >
-                <option>Escalate after low-confidence answer</option>
-                <option>Escalate before policy exceptions</option>
-                <option>Never escalate automatically</option>
-              </SelectInput>
-            </Field>
-          </div>
-        </ConfigurationSection>
-
-        <ConfigurationSection
-          icon={Brain}
-          title="Model"
-          description="Provider, retrieval, and response controls for draft and published versions."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Provider / Model">
-              <SelectInput
-                value={config.providerModel}
-                onChange={(event) => updateConfig('providerModel', event.target.value)}
-              >
-                <option>OpenAI · gpt-4o-mini</option>
-                <option>OpenAI · gpt-4o</option>
-                <option>OpenAI · o4-mini</option>
-              </SelectInput>
-            </Field>
-            <Field label={`Temperature · ${config.temperature.toFixed(2)}`}>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={config.temperature}
-                onChange={(event) => updateConfig('temperature', Number(event.target.value))}
-                className="h-9 w-full accent-primary"
-              />
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Retrieval behavior">
-              <SelectInput
-                value={config.retrievalMode}
-                onChange={(event) => updateConfig('retrievalMode', event.target.value)}
-              >
-                <option>Hybrid semantic + keyword</option>
-                <option>Semantic only</option>
-                <option>Keyword exact-match first</option>
-              </SelectInput>
-            </Field>
-            <Field label="Source budget">
-              <SelectInput
-                value={config.maxSources}
-                onChange={(event) => updateConfig('maxSources', event.target.value)}
-              >
-                <option>4 sources</option>
-                <option>6 sources</option>
-                <option>8 sources</option>
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Response length">
-              <SelectInput
-                value={config.responseLength}
-                onChange={(event) => updateConfig('responseLength', event.target.value)}
-              >
-                <option>Brief</option>
-                <option>Balanced</option>
-                <option>Detailed</option>
-              </SelectInput>
-            </Field>
-            <Field label="Citations">
-              <SelectInput
-                value={config.citationStyle}
-                onChange={(event) => updateConfig('citationStyle', event.target.value)}
-              >
-                <option>Inline source chips</option>
-                <option>Footer source list</option>
-                <option>Hidden from visitors</option>
-              </SelectInput>
-            </Field>
-          </div>
-        </ConfigurationSection>
-
-        <ConfigurationSection
-          icon={MessageSquareText}
-          title="Conversation"
-          description="Default visitor-facing behavior for the embedded widget."
-        >
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Widget theme">
-              <SelectInput
-                value={config.widgetTheme}
-                onChange={(event) => updateConfig('widgetTheme', event.target.value)}
-              >
-                <option>Dark system default</option>
-                <option>Match visitor preference</option>
-                <option>Light system default</option>
-              </SelectInput>
-            </Field>
-            <Field label="Widget position">
-              <SelectInput
-                value={config.widgetPosition}
-                onChange={(event) => updateConfig('widgetPosition', event.target.value)}
-              >
-                <option>Bottom right</option>
-                <option>Bottom left</option>
-                <option>Inline embed</option>
-              </SelectInput>
-            </Field>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <ToggleSwitch
-              label="Collect visitor feedback"
-              detail="Show helpful or not helpful controls after answers."
-              checked={config.collectFeedback}
-              onChange={(checked) => updateConfig('collectFeedback', checked)}
-            />
-            <ToggleSwitch
-              label="Human handoff"
-              detail="Offer an escalation path when confidence is low."
-              checked={config.humanHandoff}
-              onChange={(checked) => updateConfig('humanHandoff', checked)}
-            />
-          </div>
-        </ConfigurationSection>
-
-        <ConfigurationSection
-          icon={ShieldCheck}
-          title="Safety"
-          description="Guardrails applied before retrieval, generation, and visitor delivery."
-        >
-          <div className="grid gap-3">
-            <ToggleSwitch
-              label="Answer only from knowledge sources"
-              detail="Refuse or escalate when no grounded source supports the answer."
-              checked={config.strictKnowledge}
-              onChange={(checked) => updateConfig('strictKnowledge', checked)}
-            />
-            <ToggleSwitch
-              label="Prompt-injection protection"
-              detail="Detect instructions that attempt to override workspace policy."
-              checked={config.promptInjectionProtection}
-              onChange={(checked) => updateConfig('promptInjectionProtection', checked)}
-            />
-            <ToggleSwitch
-              label="PII redaction"
-              detail="Mask sensitive visitor data in logs and conversation exports."
-              checked={config.piiRedaction}
-              onChange={(checked) => updateConfig('piiRedaction', checked)}
-            />
-          </div>
-        </ConfigurationSection>
-      </div>
-
-      <div className="grid h-fit gap-4 xl:sticky xl:top-20">
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>Draft preview</PanelTitle>
-            <PanelDescription>Current configuration summary for {bot.name}.</PanelDescription>
-          </PanelHeader>
-          <PanelBody className="grid gap-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-muted font-mono text-xs font-semibold text-primary">
-                {config.initials || 'BD'}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-foreground">{config.name}</p>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{config.description}</p>
-              </div>
-            </div>
-            <div className="grid gap-2 text-xs text-muted-foreground">
-              <div className="flex justify-between gap-3">
-                <span>Model</span>
-                <span className="text-right text-foreground">{config.providerModel}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span>Retrieval</span>
-                <span className="text-right text-foreground">{config.retrievalMode}</span>
-              </div>
-              <div className="flex justify-between gap-3">
-                <span>Temperature</span>
-                <span className="font-mono text-foreground">{config.temperature.toFixed(2)}</span>
-              </div>
-            </div>
-            <CodeBlock className="max-h-48">{config.instructions}</CodeBlock>
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setActiveConfigurationPanel(item.id)}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition ${
+                    isActive
+                      ? 'border-primary/40 bg-primary-muted text-primary'
+                      : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+                  }`}
+                >
+                  <Icon className="size-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
           </PanelBody>
         </Panel>
 
+        <div className="min-w-0">
+          {activeConfigurationPanel === 'identity' ? (
+            <ConfigurationSection
+              icon={Bot}
+              title="Identity"
+              description="Public naming, default greeting, and the compact avatar used across channels."
+            >
+              <div className="grid gap-4 lg:grid-cols-[1fr_120px]">
+                <Field label="Bot name">
+                  <TextInput
+                    value={config.name}
+                    onChange={(event) => updateConfig('name', event.target.value)}
+                  />
+                </Field>
+                <Field label="Initials">
+                  <TextInput
+                    value={config.initials}
+                    maxLength={3}
+                    onChange={(event) => updateConfig('initials', event.target.value.toUpperCase())}
+                    className="font-mono"
+                  />
+                </Field>
+              </div>
+              <Field label="Description">
+                <TextInput
+                  value={config.description}
+                  onChange={(event) => updateConfig('description', event.target.value)}
+                />
+              </Field>
+              <Field label="Welcome message">
+                <TextArea
+                  value={config.welcomeMessage}
+                  onChange={(event) => updateConfig('welcomeMessage', event.target.value)}
+                  className="min-h-20"
+                />
+              </Field>
+            </ConfigurationSection>
+          ) : null}
+
+          {activeConfigurationPanel === 'instructions' ? (
+            <ConfigurationSection
+              icon={FileText}
+              title="Instructions"
+              description="System prompt, conversational posture, and escalation intent for production answers."
+            >
+              <Field label="System instructions">
+                <TextArea
+                  value={config.instructions}
+                  onChange={(event) => updateConfig('instructions', event.target.value)}
+                  className="min-h-48 font-mono text-xs leading-6"
+                />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Tone">
+                  <SelectInput
+                    value={config.tone}
+                    onChange={(event) => updateConfig('tone', event.target.value)}
+                  >
+                    <option>Friendly, precise, and calm</option>
+                    <option>Concise and technical</option>
+                    <option>Warm and consultative</option>
+                  </SelectInput>
+                </Field>
+                <Field label="Handoff behavior">
+                  <SelectInput
+                    value={config.handoffBehavior}
+                    onChange={(event) => updateConfig('handoffBehavior', event.target.value)}
+                  >
+                    <option>Escalate after low-confidence answer</option>
+                    <option>Escalate before policy exceptions</option>
+                    <option>Never escalate automatically</option>
+                  </SelectInput>
+                </Field>
+              </div>
+            </ConfigurationSection>
+          ) : null}
+
+          {activeConfigurationPanel === 'model' ? (
+            <ConfigurationSection
+              icon={Brain}
+              title="Model"
+              description="Provider, retrieval, and response controls for draft and published versions."
+            >
+              {saveMessage ? (
+                <div
+                  className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                    saveMessage.tone === 'success'
+                      ? 'border-success/40 bg-success-muted text-success'
+                      : saveMessage.tone === 'warning'
+                        ? 'border-warning/40 bg-warning-muted text-warning'
+                        : 'border-danger/40 bg-danger-muted text-danger'
+                  }`}
+                >
+                  {saveMessage.tone === 'success' ? (
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  )}
+                  <span>{saveMessage.text}</span>
+                </div>
+              ) : null}
+              {activeCredentials.length === 0 && !isLoadingCredentials ? (
+                <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                  <span>No active provider key exists for this workspace.</span>
+                  <Button variant="secondary" size="sm" onClick={onOpenModelProviders}>
+                    <KeyRound className="size-4" aria-hidden="true" />
+                    Model Providers
+                  </Button>
+                </div>
+              ) : null}
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Provider credential">
+                  <SelectInput
+                    value={config.providerCredentialId ?? ''}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => {
+                      const nextCredential =
+                        activeCredentials.find(
+                          (credential) => credential.id === event.target.value,
+                        ) ?? null;
+                      updateConfig('providerCredentialId', nextCredential?.id ?? null);
+
+                      if (nextCredential) {
+                        updateConfig(
+                          'model',
+                          modelOptionsByProvider[nextCredential.provider][0] ?? config.model,
+                        );
+                      }
+                    }}
+                  >
+                    <option value="">
+                      {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
+                    </option>
+                    {activeCredentials.map((credential) => (
+                      <option key={credential.id} value={credential.id}>
+                        {getProviderLabel(credential.provider)} · {credential.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Model">
+                  <SelectInput
+                    value={config.model}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => updateConfig('model', event.target.value)}
+                  >
+                    {modelOptions.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label={`Temperature · ${config.temperature.toFixed(2)}`}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={config.temperature}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => updateConfig('temperature', Number(event.target.value))}
+                    className="h-9 w-full accent-primary disabled:cursor-not-allowed disabled:opacity-55"
+                  />
+                </Field>
+                <Field label="Response length">
+                  <SelectInput
+                    value={config.responseLength}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) =>
+                      updateConfig('responseLength', event.target.value as BotResponseLength)
+                    }
+                  >
+                    {Object.entries(responseLengthLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Retrieval behavior">
+                  <SelectInput
+                    value={config.retrievalMode}
+                    onChange={(event) =>
+                      updateConfig('retrievalMode', event.target.value as BotRetrievalMode)
+                    }
+                  >
+                    {Object.entries(retrievalModeLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Source budget">
+                  <SelectInput
+                    value={String(config.maxSources)}
+                    onChange={(event) => updateConfig('maxSources', Number(event.target.value))}
+                  >
+                    {[4, 6, 8, 10, 12].map((sourceCount) => (
+                      <option key={sourceCount} value={sourceCount}>
+                        {sourceCount} sources
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Citations">
+                  <SelectInput
+                    value={config.citationStyle}
+                    onChange={(event) =>
+                      updateConfig('citationStyle', event.target.value as BotCitationStyle)
+                    }
+                  >
+                    {Object.entries(citationStyleLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Save state</span>
+                    <Badge tone={hasUnsavedChanges ? 'warning' : 'success'}>
+                      {isSaving ? 'Saving' : hasUnsavedChanges ? 'Unsaved' : 'Clean'}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 truncate text-xs text-foreground">
+                    {selectedCredential
+                      ? `${getProviderLabel(selectedCredential.provider)} · ${selectedCredential.label}`
+                      : 'No active credential selected'}
+                  </p>
+                </div>
+              </div>
+            </ConfigurationSection>
+          ) : null}
+
+          {activeConfigurationPanel === 'conversation' ? (
+            <ConfigurationSection
+              icon={MessageSquareText}
+              title="Conversation"
+              description="Default visitor-facing behavior for the embedded widget."
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Widget theme">
+                  <SelectInput
+                    value={config.widgetTheme}
+                    onChange={(event) => updateConfig('widgetTheme', event.target.value)}
+                  >
+                    <option>Dark system default</option>
+                    <option>Match visitor preference</option>
+                    <option>Light system default</option>
+                  </SelectInput>
+                </Field>
+                <Field label="Widget position">
+                  <SelectInput
+                    value={config.widgetPosition}
+                    onChange={(event) => updateConfig('widgetPosition', event.target.value)}
+                  >
+                    <option>Bottom right</option>
+                    <option>Bottom left</option>
+                    <option>Inline embed</option>
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <ToggleSwitch
+                  label="Collect visitor feedback"
+                  detail="Show helpful or not helpful controls after answers."
+                  checked={config.collectFeedback}
+                  onChange={(checked) => updateConfig('collectFeedback', checked)}
+                />
+                <ToggleSwitch
+                  label="Human handoff"
+                  detail="Offer an escalation path when confidence is low."
+                  checked={config.humanHandoff}
+                  onChange={(checked) => updateConfig('humanHandoff', checked)}
+                />
+              </div>
+            </ConfigurationSection>
+          ) : null}
+
+          {activeConfigurationPanel === 'safety' ? (
+            <ConfigurationSection
+              icon={ShieldCheck}
+              title="Safety"
+              description="Guardrails applied before retrieval, generation, and visitor delivery."
+            >
+              <div className="grid gap-3">
+                <ToggleSwitch
+                  label="Answer only from knowledge sources"
+                  detail="Refuse or escalate when no grounded source supports the answer."
+                  checked={config.strictKnowledge}
+                  onChange={(checked) => updateConfig('strictKnowledge', checked)}
+                />
+                <ToggleSwitch
+                  label="Prompt-injection protection"
+                  detail="Detect instructions that attempt to override workspace policy."
+                  checked={config.promptInjectionProtection}
+                  onChange={(checked) => updateConfig('promptInjectionProtection', checked)}
+                />
+                <ToggleSwitch
+                  label="PII redaction"
+                  detail="Mask sensitive visitor data in logs and conversation exports."
+                  checked={config.piiRedaction}
+                  onChange={(checked) => updateConfig('piiRedaction', checked)}
+                />
+              </div>
+            </ConfigurationSection>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid h-fit gap-4 xl:sticky xl:top-20">
         <Panel className={hasUnsavedChanges ? 'border-warning/60' : undefined}>
           <PanelBody className="grid gap-3">
             <div className="flex items-center justify-between gap-3">
@@ -1128,8 +1574,16 @@ function BotDetailConfiguration({ bot }: { bot: BotRow }) {
               </Badge>
             </div>
             <div className="grid gap-2">
-              <Button size="md" disabled={!hasUnsavedChanges}>
-                <Save className="size-4" aria-hidden="true" />
+              <Button
+                size="md"
+                disabled={!hasUnsavedChanges || isSaving}
+                onClick={() => void saveConfiguration()}
+              >
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="size-4" aria-hidden="true" />
+                )}
                 Save draft
               </Button>
               <Button variant="secondary" size="md">
@@ -1172,8 +1626,12 @@ function BotDetailConfiguration({ bot }: { bot: BotRow }) {
             <Button variant="secondary" size="sm">
               Preview
             </Button>
-            <Button size="sm">
-              <Save className="size-4" aria-hidden="true" />
+            <Button size="sm" disabled={isSaving} onClick={() => void saveConfiguration()}>
+              {isSaving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Save className="size-4" aria-hidden="true" />
+              )}
               Save draft
             </Button>
           </div>
@@ -1204,9 +1662,21 @@ function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) 
   );
 }
 
-function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<BotDetailTab>('overview');
-
+function BotDetailScreen({
+  activeTab,
+  bot,
+  onBack,
+  onTabChange,
+  onBotUpdated,
+  onOpenModelProviders,
+}: {
+  activeTab: BotDetailTab;
+  bot: BotRow;
+  onBack: () => void;
+  onTabChange: (tab: BotDetailTab) => void;
+  onBotUpdated: (bot: BotRecord) => void;
+  onOpenModelProviders: () => void;
+}) {
   return (
     <div className="grid gap-5">
       <div className="grid gap-4 border-b border-border pb-4">
@@ -1269,7 +1739,7 @@ function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
 
         <Tabs className="overflow-x-auto">
           {botDetailTabs.map((tab) => (
-            <Tab key={tab.id} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
+            <Tab key={tab.id} active={activeTab === tab.id} onClick={() => onTabChange(tab.id)}>
               {tab.label}
             </Tab>
           ))}
@@ -1277,7 +1747,13 @@ function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
       </div>
 
       {activeTab === 'overview' ? <BotDetailOverview bot={bot} /> : null}
-      {activeTab === 'configuration' ? <BotDetailConfiguration bot={bot} /> : null}
+      {activeTab === 'configuration' ? (
+        <BotDetailConfiguration
+          bot={bot}
+          onBotUpdated={onBotUpdated}
+          onOpenModelProviders={onOpenModelProviders}
+        />
+      ) : null}
       {activeTab !== 'overview' && activeTab !== 'configuration' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
       ) : null}
@@ -1285,7 +1761,15 @@ function BotDetailScreen({ bot, onBack }: { bot: BotRow; onBack: () => void }) {
   );
 }
 
-function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
+function BotsListScreen({
+  bots,
+  onCreateBot,
+  onOpenBot,
+}: {
+  bots: BotRow[];
+  onCreateBot: () => void;
+  onOpenBot: (botId: string) => void;
+}) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<BotFilter>('All');
   const [sortBy, setSortBy] = useState<BotSort>('updated');
@@ -1293,7 +1777,7 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
   const filteredBots = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return botRows
+    return bots
       .filter((bot) => {
         const matchesStatus = statusFilter === 'All' || bot.status === statusFilter;
         const matchesQuery =
@@ -1313,11 +1797,11 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
           return second.conversations - first.conversations;
         }
 
-        return botRows.indexOf(first) - botRows.indexOf(second);
+        return bots.indexOf(first) - bots.indexOf(second);
       });
-  }, [query, sortBy, statusFilter]);
+  }, [bots, query, sortBy, statusFilter]);
 
-  const statusCounts = botRows.reduce<Record<BotFilter, number>>(
+  const statusCounts = bots.reduce<Record<BotFilter, number>>(
     (counts, bot) => {
       counts.All += 1;
       counts[bot.status] += 1;
@@ -1327,8 +1811,8 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
     { All: 0, Published: 0, Draft: 0, Processing: 0, Error: 0, Disabled: 0 },
   );
 
-  if (botRows.length === 0) {
-    return <BotsEmptyState />;
+  if (bots.length === 0) {
+    return <BotsEmptyState onCreateBot={onCreateBot} />;
   }
 
   return (
@@ -1373,7 +1857,7 @@ function BotsListScreen({ onOpenBot }: { onOpenBot: (botId: string) => void }) {
           <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
               Showing <span className="font-medium text-foreground">{filteredBots.length}</span> of{' '}
-              <span className="font-medium text-foreground">{botRows.length}</span> bots
+              <span className="font-medium text-foreground">{bots.length}</span> bots
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {[
@@ -2664,6 +3148,317 @@ function ProviderCredentialsScreenCompact() {
   );
 }
 
+function CreateBotModal({
+  onClose,
+  onBotCreated,
+  onOpenModelProviders,
+}: {
+  onClose: () => void;
+  onBotCreated: (bot: BotRecord) => void;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
+  const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [providerCredentialId, setProviderCredentialId] = useState<string | null>(null);
+  const [model, setModel] = useState('gpt-4o-mini');
+  const [temperature, setTemperature] = useState(0.35);
+  const [responseLength, setResponseLength] = useState<BotResponseLength>('balanced');
+  const [retrievalMode, setRetrievalMode] = useState<BotRetrievalMode>('hybrid');
+  const [maxSources, setMaxSources] = useState(6);
+  const [citationStyle, setCitationStyle] = useState<BotCitationStyle>('inline_source_chips');
+  const activeCredentials = credentials.filter((credential) => credential.status === 'active');
+  const selectedCredential =
+    activeCredentials.find((credential) => credential.id === providerCredentialId) ?? null;
+  const modelOptions = selectedCredential
+    ? modelOptionsByProvider[selectedCredential.provider]
+    : modelOptionsByProvider.openai;
+  const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCredentials() {
+      if (!workspaceOrganisationId.trim()) {
+        setIsLoadingCredentials(false);
+        setMessage({
+          tone: 'warning',
+          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID before creating persisted bots.',
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          new URL(`/organisations/${workspaceOrganisationId}/provider-credentials`, apiBaseUrl),
+          { credentials: 'include' },
+        );
+
+        if (!response.ok) {
+          throw new Error(await parseApiError(response));
+        }
+
+        const payload = providerCredentialsResponseSchema.parse(await response.json());
+
+        if (isMounted) {
+          const nextActiveCredentials = payload.credentials.filter(
+            (credential) => credential.status === 'active',
+          );
+          setCredentials(payload.credentials);
+          setProviderCredentialId(nextActiveCredentials[0]?.id ?? null);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setMessage({
+            tone: 'danger',
+            text: error instanceof Error ? error.message : 'Could not load provider credentials.',
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCredentials(false);
+        }
+      }
+    }
+
+    void loadCredentials();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl]);
+
+  async function createBot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!workspaceOrganisationId.trim()) {
+      setMessage({ tone: 'warning', text: 'Choose a configured workspace before creating bots.' });
+      return;
+    }
+
+    if (!name.trim() || !providerCredentialId) {
+      setMessage({ tone: 'warning', text: 'Add a name and active provider credential.' });
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(new URL('/bots', apiBaseUrl), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organisationId: workspaceOrganisationId,
+          name,
+          description,
+          behaviorConfig: {
+            ...defaultBotBehaviorConfig,
+            initials: getBotInitials(name),
+          },
+          modelConfig: {
+            providerCredentialId,
+            model,
+            temperature,
+            responseLength,
+            retrievalMode,
+            maxSources,
+            citationStyle,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const createdBot = botSchema.parse(await response.json());
+      onBotCreated(createdBot);
+      onClose();
+    } catch (error) {
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not create the bot.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm">
+      <Panel className="max-h-[92vh] w-full max-w-2xl overflow-y-auto">
+        <PanelHeader>
+          <PanelTitle>Create bot</PanelTitle>
+          <PanelDescription>
+            Start with an active provider key and compact model defaults.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody>
+          <form className="grid gap-4" onSubmit={(event) => void createBot(event)}>
+            {message ? (
+              <div
+                className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                  message.tone === 'danger'
+                    ? 'border-danger/40 bg-danger-muted text-danger'
+                    : 'border-warning/40 bg-warning-muted text-warning'
+                }`}
+              >
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>{message.text}</span>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Bot name">
+                <TextInput
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Docs Assistant"
+                  autoFocus
+                />
+              </Field>
+              <Field label="Provider credential">
+                <SelectInput
+                  value={providerCredentialId ?? ''}
+                  disabled={modelSelectionDisabled}
+                  onChange={(event) => setProviderCredentialId(event.target.value || null)}
+                >
+                  <option value="">
+                    {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
+                  </option>
+                  {activeCredentials.map((credential) => (
+                    <option key={credential.id} value={credential.id}>
+                      {getProviderLabel(credential.provider)} · {credential.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+            </div>
+
+            <Field label="Description">
+              <TextInput
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Answers product and API questions"
+              />
+            </Field>
+
+            {activeCredentials.length === 0 && !isLoadingCredentials ? (
+              <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                <span>Add and validate a provider key before choosing a model.</span>
+                <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  Model Providers
+                </Button>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Model">
+                <SelectInput
+                  value={model}
+                  disabled={modelSelectionDisabled}
+                  onChange={(event) => setModel(event.target.value)}
+                >
+                  {modelOptions.map((modelOption) => (
+                    <option key={modelOption} value={modelOption}>
+                      {modelOption}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label={`Temperature · ${temperature.toFixed(2)}`}>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={temperature}
+                  disabled={modelSelectionDisabled}
+                  onChange={(event) => setTemperature(Number(event.target.value))}
+                  className="h-9 w-full accent-primary disabled:cursor-not-allowed disabled:opacity-55"
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Response length">
+                <SelectInput
+                  value={responseLength}
+                  onChange={(event) => setResponseLength(event.target.value as BotResponseLength)}
+                >
+                  {Object.entries(responseLengthLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Retrieval">
+                <SelectInput
+                  value={retrievalMode}
+                  onChange={(event) => setRetrievalMode(event.target.value as BotRetrievalMode)}
+                >
+                  {Object.entries(retrievalModeLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+              <Field label="Source budget">
+                <SelectInput
+                  value={String(maxSources)}
+                  onChange={(event) => setMaxSources(Number(event.target.value))}
+                >
+                  {[4, 6, 8, 10, 12].map((sourceCount) => (
+                    <option key={sourceCount} value={sourceCount}>
+                      {sourceCount}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+            </div>
+
+            <Field label="Citations">
+              <SelectInput
+                value={citationStyle}
+                onChange={(event) => setCitationStyle(event.target.value as BotCitationStyle)}
+              >
+                {Object.entries(citationStyleLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </SelectInput>
+            </Field>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+              <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSaving || modelSelectionDisabled}>
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
+                Create bot
+              </Button>
+            </div>
+          </form>
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
 function SettingsScreen({ user }: { user: AuthSessionUser }) {
   const displayName = getDisplayName(user);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -2755,16 +3550,21 @@ function SettingsScreen({ user }: { user: AuthSessionUser }) {
 }
 
 export function AppShell() {
-  const [activeItemId, setActiveItemId] = useState('overview');
-  const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
+  const initialRoute = useMemo(getInitialDashboardRoute, []);
+  const [activeItemId, setActiveItemId] = useState(initialRoute.activeItemId);
+  const [selectedBotId, setSelectedBotId] = useState<string | null>(initialRoute.selectedBotId);
+  const [selectedBotTab, setSelectedBotTab] = useState<BotDetailTab>(initialRoute.selectedBotTab);
+  const [bots, setBots] = useState<BotRow[]>(botRows);
+  const [botsMessage, setBotsMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [isCreateBotOpen, setIsCreateBotOpen] = useState(false);
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState<AuthSessionUser>(fallbackUser);
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
   const selectedBot = useMemo(
-    () => botRows.find((bot) => bot.id === selectedBotId) ?? null,
-    [selectedBotId],
+    () => bots.find((bot) => bot.id === selectedBotId) ?? null,
+    [bots, selectedBotId],
   );
   const ActiveIcon = activeItem.icon;
   const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -2810,6 +3610,112 @@ export function AppShell() {
     };
   }, [apiBaseUrl]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBots() {
+      if (!workspaceOrganisationId.trim()) {
+        setBotsMessage({
+          tone: 'warning',
+          text: 'Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load persisted bots.',
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          new URL(`/organisations/${workspaceOrganisationId}/bots`, apiBaseUrl),
+          { credentials: 'include' },
+        );
+
+        if (!response.ok) {
+          throw new Error(await parseApiError(response));
+        }
+
+        const payload = botsResponseSchema.parse(await response.json());
+
+        if (isMounted) {
+          setBots(payload.bots.map(toBotRow));
+          setBotsMessage(null);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setBotsMessage({
+            tone: 'warning',
+            text:
+              error instanceof Error
+                ? `${error.message} Showing sample bots.`
+                : 'Could not load persisted bots. Showing sample bots.',
+          });
+        }
+      }
+    }
+
+    void loadBots();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl]);
+
+  function replaceBot(updatedBot: BotRecord) {
+    setBots((currentBots) => {
+      const updatedRow = toBotRow(updatedBot);
+
+      if (!currentBots.some((bot) => bot.id === updatedRow.id)) {
+        return [updatedRow, ...currentBots];
+      }
+
+      return currentBots.map((bot) =>
+        bot.id === updatedRow.id
+          ? {
+              ...bot,
+              ...updatedRow,
+              conversations: bot.conversations,
+              knowledge: bot.knowledge,
+              resolutionRate: bot.resolutionRate,
+              feedbackRate: bot.feedbackRate,
+              estimatedCost: bot.estimatedCost,
+              errorRate: bot.errorRate,
+              updatedBy: bot.updatedBy,
+            }
+          : bot,
+      );
+    });
+  }
+
+  function openModelProviders() {
+    openSection('provider-keys');
+    setIsCreateBotOpen(false);
+  }
+
+  function openSection(sectionId: string) {
+    setActiveItemId(sectionId);
+    setSelectedBotId(null);
+    setSelectedBotTab('overview');
+    writeDashboardRoute({
+      activeItemId: sectionId,
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+    });
+  }
+
+  function openBot(botId: string, tab: BotDetailTab = 'overview') {
+    setActiveItemId('bots');
+    setSelectedBotId(botId);
+    setSelectedBotTab(tab);
+    writeDashboardRoute({ activeItemId: 'bots', selectedBotId: botId, selectedBotTab: tab });
+  }
+
+  function changeBotTab(tab: BotDetailTab) {
+    setSelectedBotTab(tab);
+    writeDashboardRoute({ activeItemId: 'bots', selectedBotId, selectedBotTab: tab });
+  }
+
+  function closeBotDetail() {
+    openSection('bots');
+  }
+
   function toggleTheme() {
     setTheme((currentTheme) => {
       const updatedTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -2827,8 +3733,7 @@ export function AppShell() {
   }
 
   function openSettings() {
-    setActiveItemId('settings');
-    setSelectedBotId(null);
+    openSection('settings');
     setIsUserMenuOpen(false);
   }
 
@@ -2859,10 +3764,7 @@ export function AppShell() {
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => {
-                            setActiveItemId(item.id);
-                            setSelectedBotId(null);
-                          }}
+                          onClick={() => openSection(item.id)}
                           className={`flex items-center gap-2.5 rounded-md border px-2 py-2 text-left text-sm font-medium transition ${
                             isActive
                               ? 'border-border bg-surface-raised text-foreground'
@@ -2917,7 +3819,7 @@ export function AppShell() {
                       Last 30 days
                       <ChevronDown className="size-4" aria-hidden="true" />
                     </Button>
-                    <Button size="md">
+                    <Button size="md" onClick={() => setIsCreateBotOpen(true)}>
                       <Bot className="size-4" aria-hidden="true" />
                       Create bot
                     </Button>
@@ -2980,16 +3882,36 @@ export function AppShell() {
               )}
 
               {selectedBot ? (
-                <BotDetailScreen bot={selectedBot} onBack={() => setSelectedBotId(null)} />
+                <BotDetailScreen
+                  activeTab={selectedBotTab}
+                  bot={selectedBot}
+                  onBack={closeBotDetail}
+                  onTabChange={changeBotTab}
+                  onBotUpdated={replaceBot}
+                  onOpenModelProviders={openModelProviders}
+                />
               ) : activeItemId === 'overview' ? (
                 <OverviewDashboard />
               ) : activeItemId === 'bots' ? (
-                <BotsListScreen
-                  onOpenBot={(botId) => {
-                    setActiveItemId('bots');
-                    setSelectedBotId(botId);
-                  }}
-                />
+                <div className="grid gap-4">
+                  {botsMessage ? (
+                    <div
+                      className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+                        botsMessage.tone === 'danger'
+                          ? 'border-danger/40 bg-danger-muted text-danger'
+                          : 'border-warning/40 bg-warning-muted text-warning'
+                      }`}
+                    >
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      <span>{botsMessage.text}</span>
+                    </div>
+                  ) : null}
+                  <BotsListScreen
+                    bots={bots}
+                    onCreateBot={() => setIsCreateBotOpen(true)}
+                    onOpenBot={openBot}
+                  />
+                </div>
               ) : activeItemId === 'provider-keys' ? (
                 <ProviderCredentialsScreenCompact />
               ) : activeItemId === 'settings' ? (
@@ -3035,6 +3957,16 @@ export function AppShell() {
               )}
             </div>
           </main>
+          {isCreateBotOpen ? (
+            <CreateBotModal
+              onClose={() => setIsCreateBotOpen(false)}
+              onBotCreated={(bot) => {
+                replaceBot(bot);
+                openBot(bot.id);
+              }}
+              onOpenModelProviders={openModelProviders}
+            />
+          ) : null}
         </div>
       </div>
     </div>

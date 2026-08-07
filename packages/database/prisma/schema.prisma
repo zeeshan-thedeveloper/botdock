@@ -120,20 +120,41 @@ model OrganisationMember {
 }
 
 model Bot {
-  id             String    @id @default(cuid())
-  organisationId String
-  createdById    String
-  name           String
-  description    String?
-  status         BotStatus @default(DRAFT)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                        String    @id @default(cuid())
+  organisationId            String
+  createdById               String
+  providerCredentialId      String?
+  name                      String
+  description               String?
+  status                    BotStatus @default(DRAFT)
+  initials                  String?
+  welcomeMessage            String    @default("Hi! I'm here to help with orders, returns, and account questions.")
+  instructions              String    @default("You are a customer support assistant for this account.\nAnswer only using the provided knowledge sources.\nBe concise, friendly, and professional.\nIf policy details conflict, prefer the most recent source.\nEscalate billing disputes, account access issues, and refund exceptions.")
+  tone                      String    @default("Friendly, precise, and calm")
+  handoffBehavior           String    @default("Escalate after low-confidence answer")
+  model                     String    @default("gpt-4o-mini")
+  temperature               Float     @default(0.35)
+  responseLength            String    @default("balanced")
+  retrievalMode             String    @default("hybrid")
+  maxSources                Int       @default(6)
+  citationStyle             String    @default("inline_source_chips")
+  widgetTheme               String    @default("Dark system default")
+  widgetPosition            String    @default("Bottom right")
+  strictKnowledge           Boolean   @default(true)
+  promptInjectionProtection Boolean   @default(true)
+  piiRedaction              Boolean   @default(true)
+  collectFeedback           Boolean   @default(true)
+  humanHandoff              Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  createdBy    User         @relation("BotCreatedBy", fields: [createdById], references: [id])
+  organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdBy          User                @relation("BotCreatedBy", fields: [createdById], references: [id])
+  providerCredential ProviderCredential? @relation(fields: [providerCredentialId], references: [id], onDelete: SetNull)
 
   @@index([organisationId])
   @@index([createdById])
+  @@index([providerCredentialId])
   @@map("bots")
 }
 
@@ -152,6 +173,7 @@ model ProviderCredential {
 
   organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   createdBy    User         @relation("ProviderCredentialCreatedBy", fields: [createdById], references: [id])
+  bots         Bot[]
 
   @@unique([organisationId, provider, label])
   @@index([organisationId])

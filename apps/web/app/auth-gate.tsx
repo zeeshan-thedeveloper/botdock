@@ -97,6 +97,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
         return;
       }
 
+      window.history.replaceState(null, '', dashboardPath);
       setHasCompletedAuth(true);
       setHasResolvedAuth(true);
       return;

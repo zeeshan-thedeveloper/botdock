@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { apiEnvironmentSchema } from '@botdock/config';
 import { AuthModule } from './auth/auth.module.js';
+import { BotsModule } from './bots/bots.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LoggerModule } from './logger/logger.module.js';
@@ -16,6 +17,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
     LoggerModule,
     DatabaseModule,
     AuthModule,
+    BotsModule,
     ProviderCredentialsModule,
     HealthModule,
   ],
