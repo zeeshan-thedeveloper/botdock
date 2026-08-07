@@ -14,7 +14,22 @@ async function bootstrap() {
     .split(',')
     .map((origin) => origin.trim());
 
-  app.enableCors({ origin: corsOrigins, credentials: true });
+  // The public widget (/public/*) is embedded on arbitrary tenant-owned
+  // domains unknown at boot time, so it can't use the static app-origin
+  // allowlist below. It never uses cookies/credentials, so reflecting the
+  // request's Origin back is safe at the CORS layer; the actual per-bot
+  // domain restriction is enforced inside WidgetController via
+  // isOriginAllowed, which is the real access-control decision — CORS
+  // headers alone only affect what a *browser* lets JS read, not what a
+  // direct/non-browser caller can do.
+  app.enableCors((request: { url?: string }, callback: (error: Error | null, options: object) => void) => {
+    if (request.url?.startsWith('/public/')) {
+      callback(null, { origin: true, credentials: false, exposedHeaders: ['X-BotDock-Visitor-Id'] });
+      return;
+    }
+
+    callback(null, { origin: corsOrigins, credentials: true });
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       forbidUnknownValues: true,

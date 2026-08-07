@@ -329,3 +329,11 @@ export const deploymentInfoSchema = z.object({
 });
 
 export type DeploymentInfo = z.infer<typeof deploymentInfoSchema>;
+
+export const widgetMessageSchema = z.object({
+  conversationId: z.string().optional(),
+  visitorId: z.string().max(200).optional(),
+  message: z.string().trim().min(1).max(8000),
+});
+
+export type WidgetMessageInput = z.infer<typeof widgetMessageSchema>;

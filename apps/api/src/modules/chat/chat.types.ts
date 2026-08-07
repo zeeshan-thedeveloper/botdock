@@ -5,6 +5,8 @@ export interface ChatRunInput {
   botId: string;
   configVersion: 'draft' | 'published';
   conversationId?: string;
+  /** Opaque visitor identifier for the WIDGET path; never a user/org id. */
+  visitorId?: string;
   userMessage: string;
   source: ChatConversationSource;
   debug: boolean;

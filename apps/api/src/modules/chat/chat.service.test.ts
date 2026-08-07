@@ -118,6 +118,22 @@ describe('ChatService.runChat', () => {
     ]);
   });
 
+  it('stamps a new conversation with the given visitorId (WIDGET path) without leaking it elsewhere', async () => {
+    prisma.bot.findFirst.mockResolvedValue(activeBot);
+    retrievalService.retrieve.mockResolvedValue({ hasRelevantKnowledge: false, chunks: [] });
+    prisma.message.create
+      .mockResolvedValueOnce({ id: 'msg-user' })
+      .mockResolvedValueOnce({ id: 'msg-assistant' });
+
+    await collect(
+      service.runChat(baseInput({ source: 'WIDGET', visitorId: 'visitor_abc123' })),
+    );
+
+    expect(prisma.conversation.create).toHaveBeenCalledWith({
+      data: { organisationId: 'org-1', botId: 'bot-1', source: 'WIDGET', visitorId: 'visitor_abc123' },
+    });
+  });
+
   it('resolves published config from the PRODUCTION deployment snapshot, not the draft', async () => {
     prisma.botDeployment.findFirst.mockResolvedValue({
       currentVersion: {

@@ -313,7 +313,12 @@ export class ChatService {
     }
 
     return this.prisma.conversation.create({
-      data: { organisationId: input.organisationId, botId, source: input.source },
+      data: {
+        organisationId: input.organisationId,
+        botId,
+        source: input.source,
+        visitorId: input.visitorId ?? null,
+      },
     });
   }
 
