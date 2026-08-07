@@ -1,5 +1,6 @@
 export { Prisma, PrismaClient } from '@prisma/client';
 export type {
+  AllowedDomain,
   AuthSession,
   Bot,
   BotDeployment,

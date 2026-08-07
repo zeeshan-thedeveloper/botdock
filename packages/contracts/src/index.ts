@@ -293,3 +293,39 @@ export const playgroundMessageSchema = z.object({
 });
 
 export type PlaygroundMessageInput = z.infer<typeof playgroundMessageSchema>;
+
+export const allowedDomainSchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  pattern: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export type AllowedDomain = z.infer<typeof allowedDomainSchema>;
+
+export const allowedDomainsResponseSchema = z.object({
+  domains: z.array(allowedDomainSchema),
+});
+
+export type AllowedDomainsResponse = z.infer<typeof allowedDomainsResponseSchema>;
+
+export const createAllowedDomainSchema = z.object({
+  pattern: z.string().trim().min(1).max(253),
+});
+
+export type CreateAllowedDomainInput = z.infer<typeof createAllowedDomainSchema>;
+
+export const deploymentStatusSchema = z.enum(['active', 'disabled']);
+
+export type DeploymentStatus = z.infer<typeof deploymentStatusSchema>;
+
+export const deploymentInfoSchema = z.object({
+  deploymentId: z.string().nullable(),
+  environment: z.literal('production'),
+  status: deploymentStatusSchema.nullable(),
+  currentVersionNumber: z.number().int().nullable(),
+  publishedAt: z.string().datetime().nullable(),
+  embedSnippet: z.string().nullable(),
+});
+
+export type DeploymentInfo = z.infer<typeof deploymentInfoSchema>;

@@ -91,6 +91,7 @@ model User {
   sessions                   AuthSession[]
   providerCredentialsCreated ProviderCredential[] @relation("ProviderCredentialCreatedBy")
   botVersionsPublished       BotVersion[]         @relation("BotVersionPublishedBy")
+  allowedDomainsCreated      AllowedDomain[]      @relation("AllowedDomainCreatedBy")
 
   @@map("users")
 }
@@ -148,6 +149,7 @@ model Organisation {
   usageRecords        UsageRecord[]
   botVersions         BotVersion[]
   botDeployments      BotDeployment[]
+  allowedDomains      AllowedDomain[]
 
   @@map("organisations")
 }
@@ -207,6 +209,7 @@ model Bot {
   usageRecords       UsageRecord[]
   versions           BotVersion[]
   deployments        BotDeployment[]
+  allowedDomains     AllowedDomain[]
 
   @@index([organisationId])
   @@index([createdById])
@@ -459,4 +462,24 @@ model BotDeployment {
   @@unique([botId, environment])
   @@index([organisationId])
   @@map("bot_deployments")
+}
+
+/// A domain (or `*.` wildcard) a bot's widget is allowed to run on. Scoped to
+/// the bot rather than a specific deployment/environment for MVP — see
+/// origin.util.ts's isOriginAllowed for the matching rules this enforces.
+model AllowedDomain {
+  id             String   @id @default(cuid())
+  organisationId String
+  botId          String
+  pattern        String
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("AllowedDomainCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([botId, pattern])
+  @@index([botId])
+  @@map("allowed_domains")
 }
