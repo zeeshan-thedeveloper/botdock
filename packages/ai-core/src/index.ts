@@ -9,6 +9,7 @@ export interface ChatModelRequest {
   temperature?: number;
   maxOutputTokens?: number;
   metadata?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 export interface ChatModelChunk {
@@ -52,3 +53,8 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
     return inputs.map((input) => [input.length, input.split(/\s+/).filter(Boolean).length, 1]);
   }
 }
+
+export * from './openai/chat.js';
+export * from './openai/embedding.js';
+export * from './openai/pricing.js';
+export * from './openai/errors.js';

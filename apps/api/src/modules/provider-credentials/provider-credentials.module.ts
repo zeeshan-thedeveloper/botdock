@@ -16,5 +16,6 @@ import { ProviderCredentialsService } from './provider-credentials.service.js';
     ProviderCredentialsService,
     SessionAuthGuard,
   ],
+  exports: [ProviderCredentialCryptoService],
 })
 export class ProviderCredentialsModule {}

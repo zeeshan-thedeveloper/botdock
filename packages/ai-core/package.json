@@ -14,6 +14,7 @@
   "devDependencies": {
     "@botdock/eslint-config": "workspace:*",
     "@botdock/typescript-config": "workspace:*",
+    "@types/node": "^22.10.7",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

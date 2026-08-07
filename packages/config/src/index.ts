@@ -37,6 +37,7 @@ export const apiEnvironmentSchema = z.object({
   GITHUB_OAUTH_CLIENT_ID: z.string().optional(),
   GITHUB_OAUTH_CLIENT_SECRET: z.string().optional(),
   PROVIDER_CREDENTIAL_ENC_KEY: z.string().min(32),
+  OPENAI_BASE_URL: z.string().url().optional(),
 });
 
 export type ApiEnvironment = z.infer<typeof apiEnvironmentSchema>;

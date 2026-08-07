@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@botdock/ai-core": "workspace:*",
     "@botdock/config": "workspace:*",
     "@botdock/contracts": "workspace:*",
     "@botdock/database": "workspace:*",
