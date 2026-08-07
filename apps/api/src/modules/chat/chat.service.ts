@@ -25,6 +25,16 @@ type ResolvedBot = {
   providerCredential: { status: 'ACTIVE' | 'INVALID' } | null;
 };
 
+/** Shape written by BotsService.toConfigSnapshot (DEPLOY-001) — trusted, not runtime-validated. */
+type BotConfigSnapshot = {
+  instructions: string;
+  model: string;
+  temperature: number;
+  maxSources: number;
+  strictKnowledge: boolean;
+  providerCredentialId: string | null;
+};
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -236,9 +246,10 @@ export class ChatService {
   }
 
   private async resolveBot(input: ChatRunInput): Promise<ResolvedBot | null> {
-    // configVersion: 'published' will read an immutable BotVersion snapshot once
-    // DEPLOY-001 lands; until then both draft and published resolve to the live
-    // bot row (this only matters once publishing/versioning actually exists).
+    if (input.configVersion === 'published') {
+      return this.resolvePublishedBot(input);
+    }
+
     return this.prisma.bot.findFirst({
       where: { id: input.botId, organisationId: input.organisationId },
       select: {
@@ -252,6 +263,46 @@ export class ChatService {
         providerCredential: { select: { status: true } },
       },
     });
+  }
+
+  private async resolvePublishedBot(input: ChatRunInput): Promise<ResolvedBot | null> {
+    const deployment = await this.prisma.botDeployment.findFirst({
+      where: {
+        botId: input.botId,
+        organisationId: input.organisationId,
+        environment: 'PRODUCTION',
+        status: 'ACTIVE',
+      },
+      select: {
+        currentVersion: { select: { configSnapshot: true } },
+      },
+    });
+
+    if (!deployment?.currentVersion) {
+      return null;
+    }
+
+    const snapshot = deployment.currentVersion.configSnapshot as unknown as BotConfigSnapshot;
+
+    // Credential status must be re-checked live — it may have been revoked
+    // since this version was published, and the snapshot only carries the id.
+    const providerCredential = snapshot.providerCredentialId
+      ? await this.prisma.providerCredential.findUnique({
+          where: { id: snapshot.providerCredentialId },
+          select: { status: true },
+        })
+      : null;
+
+    return {
+      id: input.botId,
+      instructions: snapshot.instructions,
+      model: snapshot.model,
+      temperature: snapshot.temperature,
+      maxSources: snapshot.maxSources,
+      strictKnowledge: snapshot.strictKnowledge,
+      providerCredentialId: snapshot.providerCredentialId,
+      providerCredential,
+    };
   }
 
   private async resolveConversation(input: ChatRunInput, botId: string) {

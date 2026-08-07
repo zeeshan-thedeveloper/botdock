@@ -65,6 +65,17 @@ enum MessageRole {
   ASSISTANT
 }
 
+enum DeploymentEnvironment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum DeploymentStatus {
+  ACTIVE
+  DISABLED
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
@@ -79,6 +90,7 @@ model User {
   identities                 OAuthIdentity[]
   sessions                   AuthSession[]
   providerCredentialsCreated ProviderCredential[] @relation("ProviderCredentialCreatedBy")
+  botVersionsPublished       BotVersion[]         @relation("BotVersionPublishedBy")
 
   @@map("users")
 }
@@ -134,6 +146,8 @@ model Organisation {
   documentChunks      DocumentChunk[]
   conversations       Conversation[]
   usageRecords        UsageRecord[]
+  botVersions         BotVersion[]
+  botDeployments      BotDeployment[]
 
   @@map("organisations")
 }
@@ -191,6 +205,8 @@ model Bot {
   documentChunks     DocumentChunk[]
   conversations      Conversation[]
   usageRecords       UsageRecord[]
+  versions           BotVersion[]
+  deployments        BotDeployment[]
 
   @@index([organisationId])
   @@index([createdById])
@@ -397,4 +413,50 @@ model UsageRecord {
   @@index([organisationId, createdAt])
   @@index([botId, createdAt])
   @@map("usage_records")
+}
+
+/// An immutable snapshot of a bot's full effective config at publish time.
+/// Never mutated after creation — `versionNumber` increments per bot. The
+/// mutable working copy stays on `Bot`; this is the published history.
+model BotVersion {
+  id              String   @id
+  organisationId  String
+  botId           String
+  versionNumber   Int
+  configSnapshot  Json
+  note            String?
+  publishedById   String
+  createdAt       DateTime @default(now())
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  publishedBy  User             @relation("BotVersionPublishedBy", fields: [publishedById], references: [id])
+  deployments  BotDeployment[]
+
+  @@unique([botId, versionNumber])
+  @@index([botId, createdAt])
+  @@map("bot_versions")
+}
+
+/// A public, addressable deployment target for a bot (one per environment).
+/// `id` is a prefixed, non-guessable public identifier (`dep_...`) — this is
+/// the `deploymentId` the widget/embed will use (CHAT-005, DIST-001).
+model BotDeployment {
+  id                String                @id
+  organisationId    String
+  botId             String
+  environment       DeploymentEnvironment
+  currentVersionId  String?
+  status            DeploymentStatus      @default(ACTIVE)
+  publishedAt       DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot            Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  currentVersion BotVersion?  @relation(fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([botId, environment])
+  @@index([organisationId])
+  @@map("bot_deployments")
 }

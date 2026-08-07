@@ -7,6 +7,8 @@ import type { ChatRunInput } from './chat.types.js';
 function createPrismaMock() {
   return {
     bot: { findFirst: vi.fn() },
+    botDeployment: { findFirst: vi.fn() },
+    providerCredential: { findUnique: vi.fn() },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     message: { findMany: vi.fn(), create: vi.fn() },
     messageSource: { createMany: vi.fn() },
@@ -114,6 +116,51 @@ describe('ChatService.runChat', () => {
     expect(events).toEqual([
       { type: 'error', code: 'conversation_not_found', message: expect.any(String) },
     ]);
+  });
+
+  it('resolves published config from the PRODUCTION deployment snapshot, not the draft', async () => {
+    prisma.botDeployment.findFirst.mockResolvedValue({
+      currentVersion: {
+        configSnapshot: {
+          instructions: 'Published instructions, not the live draft.',
+          model: 'gpt-4o',
+          temperature: 0.1,
+          maxSources: 3,
+          strictKnowledge: true,
+          providerCredentialId: 'cred-published',
+        },
+      },
+    });
+    prisma.providerCredential.findUnique.mockResolvedValue({ status: 'ACTIVE' });
+    retrievalService.retrieve.mockResolvedValue({ hasRelevantKnowledge: false, chunks: [] });
+    prisma.message.create
+      .mockResolvedValueOnce({ id: 'msg-user' })
+      .mockResolvedValueOnce({ id: 'msg-assistant' });
+
+    await collect(service.runChat(baseInput({ configVersion: 'published' })));
+
+    expect(prisma.bot.findFirst).not.toHaveBeenCalled();
+    expect(prisma.botDeployment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { botId: 'bot-1', organisationId: 'org-1', environment: 'PRODUCTION', status: 'ACTIVE' },
+      }),
+    );
+    expect(prisma.providerCredential.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'cred-published' } }),
+    );
+    // Fallback path only runs when strictKnowledge (from the snapshot) is honoured
+    // and retrieval found nothing — confirms the snapshot's fields actually drove the pipeline.
+    expect(retrievalService.retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ botId: 'bot-1', topK: 3 }),
+    );
+  });
+
+  it('emits bot_not_found for a published bot with no active PRODUCTION deployment', async () => {
+    prisma.botDeployment.findFirst.mockResolvedValue(null);
+
+    const events = await collect(service.runChat(baseInput({ configVersion: 'published' })));
+
+    expect(events).toEqual([{ type: 'error', code: 'bot_not_found', message: expect.any(String) }]);
   });
 
   it('runs the full pipeline: tokens, citation, usage, done — and persists everything', async () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -16,6 +17,7 @@ import type {
   ModelProvider,
   UpdateBotInput,
 } from '@botdock/contracts';
+import { Prisma } from '@botdock/database';
 import { PrismaService } from '../database/prisma.service.js';
 
 type StoredBot = {
@@ -167,6 +169,93 @@ export class BotsService {
     });
 
     return this.toResponse(bot);
+  }
+
+  async publishBot(organisationId: string, userId: string, botId: string): Promise<BotResponse> {
+    await this.ensureOrganisationMember(organisationId, userId);
+
+    const bot = await this.prisma.bot.findFirst({
+      where: { id: botId, organisationId },
+      select: this.botSelect(),
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot was not found.');
+    }
+
+    const configSnapshot = this.toConfigSnapshot(bot);
+    const publishedAt = new Date();
+
+    const updatedBot = await this.prisma.$transaction(async (tx) => {
+      const lastVersion = await tx.botVersion.findFirst({
+        where: { botId },
+        orderBy: { versionNumber: 'desc' },
+        select: { versionNumber: true },
+      });
+      const versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
+
+      const version = await tx.botVersion.create({
+        data: {
+          id: `ver_${randomUUID()}`,
+          organisationId,
+          botId,
+          versionNumber,
+          configSnapshot,
+          publishedById: userId,
+        },
+      });
+
+      await tx.botDeployment.upsert({
+        where: { botId_environment: { botId, environment: 'PRODUCTION' } },
+        create: {
+          id: `dep_${randomUUID()}`,
+          organisationId,
+          botId,
+          environment: 'PRODUCTION',
+          currentVersionId: version.id,
+          publishedAt,
+        },
+        update: {
+          currentVersionId: version.id,
+          publishedAt,
+          status: 'ACTIVE',
+        },
+      });
+
+      return tx.bot.update({
+        where: { id: botId },
+        data: { status: 'PUBLISHED' },
+        select: this.botSelect(),
+      });
+    });
+
+    return this.toResponse(updatedBot);
+  }
+
+  private toConfigSnapshot(bot: StoredBot): Prisma.InputJsonValue {
+    return {
+      name: bot.name,
+      description: bot.description,
+      initials: bot.initials,
+      welcomeMessage: bot.welcomeMessage,
+      instructions: bot.instructions,
+      tone: bot.tone,
+      handoffBehavior: bot.handoffBehavior,
+      providerCredentialId: bot.providerCredentialId,
+      model: bot.model,
+      temperature: bot.temperature,
+      responseLength: bot.responseLength,
+      retrievalMode: bot.retrievalMode,
+      maxSources: bot.maxSources,
+      citationStyle: bot.citationStyle,
+      widgetTheme: bot.widgetTheme,
+      widgetPosition: bot.widgetPosition,
+      strictKnowledge: bot.strictKnowledge,
+      promptInjectionProtection: bot.promptInjectionProtection,
+      piiRedaction: bot.piiRedaction,
+      collectFeedback: bot.collectFeedback,
+      humanHandoff: bot.humanHandoff,
+    };
   }
 
   private async ensureOrganisationMember(organisationId: string, userId: string) {
