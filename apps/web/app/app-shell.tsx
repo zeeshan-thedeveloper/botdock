@@ -15,6 +15,8 @@ import {
   type BotModelConfig,
   type BotResponseLength,
   type BotRetrievalMode,
+  type KnowledgeSource,
+  type KnowledgeSourceType,
   type ModelProvider,
   type ProviderCredential,
 } from '@botdock/contracts';
@@ -52,6 +54,7 @@ import {
   Sun,
   Trash2,
   TriangleAlert,
+  Upload,
 } from 'lucide-react';
 import {
   Badge,
@@ -1809,6 +1812,239 @@ function BotDetailConfiguration({
   );
 }
 
+const knowledgeSourceTypeLabel: Record<KnowledgeSourceType, string> = {
+  file: 'File',
+  text: 'Text',
+  faq: 'FAQ',
+};
+
+const knowledgeSourceStatusLabel: Record<KnowledgeSource['status'], string> = {
+  processing: 'Processing',
+  ready: 'Ready',
+  failed: 'Failed',
+};
+
+function knowledgeSourceStatusTone(status: KnowledgeSource['status']) {
+  if (status === 'ready') {
+    return 'success' as const;
+  }
+
+  if (status === 'failed') {
+    return 'danger' as const;
+  }
+
+  return 'primary' as const;
+}
+
+function getKnowledgeSourcesFixture(bot: BotRow): KnowledgeSource[] {
+  const now = Date.now();
+
+  return [
+    {
+      id: `${bot.id}-source-1`,
+      organisationId: workspaceOrganisationId,
+      botId: bot.id,
+      type: 'file',
+      name: 'refund-policy.pdf',
+      status: 'ready',
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      chunkCount: 186,
+      errorMessage: null,
+      createdAt: new Date(now - 4 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 4 * 86_400_000).toISOString(),
+    },
+    {
+      id: `${bot.id}-source-2`,
+      organisationId: workspaceOrganisationId,
+      botId: bot.id,
+      type: 'faq',
+      name: 'Shipping FAQ',
+      status: 'ready',
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      chunkCount: 42,
+      errorMessage: null,
+      createdAt: new Date(now - 7 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 7 * 86_400_000).toISOString(),
+    },
+    {
+      id: `${bot.id}-source-3`,
+      organisationId: workspaceOrganisationId,
+      botId: bot.id,
+      type: 'text',
+      name: 'Account & billing notes',
+      status: 'processing',
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      chunkCount: 0,
+      errorMessage: null,
+      createdAt: new Date(now - 60_000).toISOString(),
+      updatedAt: new Date(now - 60_000).toISOString(),
+    },
+    {
+      id: `${bot.id}-source-4`,
+      organisationId: workspaceOrganisationId,
+      botId: bot.id,
+      type: 'file',
+      name: 'onboarding-guide.pdf',
+      status: 'failed',
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      chunkCount: 0,
+      errorMessage: 'PDF parsing is not supported yet; upload a text or markdown file instead.',
+      createdAt: new Date(now - 2 * 86_400_000).toISOString(),
+      updatedAt: new Date(now - 2 * 86_400_000).toISOString(),
+    },
+  ];
+}
+
+function BotDetailKnowledge({ bot }: { bot: BotRow }) {
+  const [sources] = useState<KnowledgeSource[]>(() => getKnowledgeSourcesFixture(bot));
+  const totalChunks = sources.reduce((sum, source) => sum + source.chunkCount, 0);
+
+  return (
+    <div className="grid gap-4">
+      <Panel>
+        <PanelHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <PanelTitle>Knowledge sources</PanelTitle>
+            <PanelDescription>
+              {sources.length} source{sources.length === 1 ? '' : 's'} · {totalChunks} chunks
+              indexed
+            </PanelDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm">
+              <Plus className="size-4" aria-hidden="true" />
+              Add text
+            </Button>
+            <Button variant="secondary" size="sm">
+              <Plus className="size-4" aria-hidden="true" />
+              Add FAQ
+            </Button>
+            <Button size="sm">
+              <Upload className="size-4" aria-hidden="true" />
+              Upload files
+            </Button>
+          </div>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <div className="rounded-lg border border-dashed border-border bg-surface/70 p-8 text-center">
+            <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-foreground">
+              Drag and drop files, or click to browse
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              PDF, TXT, Markdown · up to 20MB per file
+            </p>
+          </div>
+
+          {sources.length === 0 ? (
+            <EmptyState
+              title="No knowledge sources yet"
+              description="Upload a file or add text/FAQ content so this bot can answer from your knowledge base."
+            />
+          ) : (
+            <>
+              <div className="-mx-4 -my-4 grid gap-3 p-4 md:hidden">
+                {sources.map((source) => (
+                  <div
+                    key={source.id}
+                    className="min-w-0 rounded-md border border-border bg-surface-raised p-4"
+                  >
+                    <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                      {source.name}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{knowledgeSourceTypeLabel[source.type]}</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span>{source.chunkCount} chunks</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span>{getRelativeTimestamp(source.updatedAt)}</span>
+                    </div>
+                    <StatusBadge
+                      status={knowledgeSourceStatusLabel[source.status]}
+                      tone={knowledgeSourceStatusTone(source.status)}
+                      className="mt-3"
+                    />
+                    {source.errorMessage ? (
+                      <p className="mt-2 break-words text-xs text-danger [overflow-wrap:anywhere]">
+                        {source.errorMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[38%] px-3 sm:px-4">Source</TableHead>
+                    <TableHead className="w-20 px-3 sm:px-4">Type</TableHead>
+                    <TableHead className="w-36 px-3 sm:px-4">Status</TableHead>
+                    <TableHead className="w-20 px-3 text-right sm:px-4">Chunks</TableHead>
+                    <TableHead className="w-28 px-3 sm:px-4">Updated</TableHead>
+                    <TableHead className="w-16 px-2 sm:px-3">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <tbody>
+                  {sources.map((source) => (
+                    <TableRow key={source.id}>
+                      <TableCell className="min-w-0 whitespace-normal px-3 sm:px-4">
+                        <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                          {source.name}
+                        </p>
+                        {source.errorMessage ? (
+                          <p className="mt-1 break-words text-xs text-danger [overflow-wrap:anywhere]">
+                            {source.errorMessage}
+                          </p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 text-muted-foreground sm:px-4">
+                        {knowledgeSourceTypeLabel[source.type]}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 sm:px-4">
+                        <StatusBadge
+                          status={knowledgeSourceStatusLabel[source.status]}
+                          tone={knowledgeSourceStatusTone(source.status)}
+                        />
+                      </TableCell>
+                      <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
+                        {source.chunkCount}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 text-muted-foreground sm:px-4">
+                        {getRelativeTimestamp(source.updatedAt)}
+                      </TableCell>
+                      <TableCell className="px-2 sm:px-3">
+                        <div className="flex justify-end">
+                          <IconButton
+                            aria-label={`Delete ${source.name}`}
+                            variant="ghost"
+                            size="sm"
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </tbody>
+              </DataTable>
+            </>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Website, Notion, Google Drive, and GitHub sources are coming soon.
+          </p>
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
 function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
   const tabLabel = botDetailTabs.find((item) => item.id === tab)?.label ?? 'Section';
 
@@ -1987,7 +2223,8 @@ function BotDetailScreen({
           onOpenModelProviders={onOpenModelProviders}
         />
       ) : null}
-      {activeTab !== 'overview' && activeTab !== 'configuration' ? (
+      {activeTab === 'knowledge' ? <BotDetailKnowledge bot={bot} /> : null}
+      {activeTab !== 'overview' && activeTab !== 'configuration' && activeTab !== 'knowledge' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
       ) : null}
     </div>
