@@ -13,8 +13,15 @@ vi.mock('@aws-sdk/client-s3', () => {
     CreateBucketCommand: FakeCommand,
     PutObjectCommand: FakeCommand,
     DeleteObjectsCommand: FakeCommand,
+    GetObjectCommand: FakeCommand,
   };
 });
+
+async function* asyncBytes(chunks: string[]) {
+  for (const chunk of chunks) {
+    yield Buffer.from(chunk);
+  }
+}
 
 const { ObjectStorageService } = await import('./object-storage.service.js');
 
@@ -63,6 +70,23 @@ describe('ObjectStorageService', () => {
           Bucket: 'botdock-knowledge',
           Key: 'org-1/bot-1/source-1/content.txt',
           ContentType: 'text/plain',
+        }),
+      }),
+    );
+  });
+
+  it('getObject concatenates the response body stream into a Buffer', async () => {
+    sendMock.mockResolvedValueOnce({ Body: asyncBytes(['hel', 'lo']) });
+    const service = new ObjectStorageService(createConfigServiceMock() as never);
+
+    const buffer = await service.getObject('org-1/bot-1/source-1/content.txt');
+
+    expect(buffer.toString('utf8')).toBe('hello');
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          Bucket: 'botdock-knowledge',
+          Key: 'org-1/bot-1/source-1/content.txt',
         }),
       }),
     );

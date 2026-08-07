@@ -1,6 +1,8 @@
+import type { Readable } from 'node:stream';
 import {
   CreateBucketCommand,
   DeleteObjectsCommand,
+  GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
   S3Client,
@@ -43,6 +45,20 @@ export class ObjectStorageService implements OnModuleInit {
         ContentType: contentType,
       }),
     );
+  }
+
+  async getObject(key: string): Promise<Buffer> {
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const stream = response.Body as Readable;
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+    }
+
+    return Buffer.concat(chunks);
   }
 
   async deleteObjects(keys: string[]): Promise<void> {
