@@ -249,3 +249,40 @@ export const createKnowledgeSourceSchema = z.object({
 });
 
 export type CreateKnowledgeSourceInput = z.infer<typeof createKnowledgeSourceSchema>;
+
+export const chatConversationSourceSchema = z.enum(['PLAYGROUND', 'WIDGET', 'API']);
+
+export type ChatConversationSource = z.infer<typeof chatConversationSourceSchema>;
+
+export const chatCitationSourceSchema = z.object({
+  label: z.string(),
+  location: z.string().nullable(),
+  score: z.number(),
+  knowledgeSourceId: z.string().nullable(),
+});
+
+export type ChatCitationSource = z.infer<typeof chatCitationSourceSchema>;
+
+export const chatStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('token'), delta: z.string() }),
+  z.object({ type: z.literal('citation'), sources: z.array(chatCitationSourceSchema) }),
+  z.object({
+    type: z.literal('trace'),
+    requestId: z.string(),
+    model: z.string(),
+    contextTokens: z.number().int().min(0),
+    retrievedChunks: z.array(z.object({ label: z.string(), score: z.number() })),
+    promptPreview: z.string(),
+  }),
+  z.object({
+    type: z.literal('usage'),
+    promptTokens: z.number().int().min(0),
+    completionTokens: z.number().int().min(0),
+    latencyMs: z.number().min(0),
+    estCostUsd: z.number().min(0),
+  }),
+  z.object({ type: z.literal('done'), conversationId: z.string(), messageId: z.string() }),
+  z.object({ type: z.literal('error'), code: z.string(), message: z.string() }),
+]);
+
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
