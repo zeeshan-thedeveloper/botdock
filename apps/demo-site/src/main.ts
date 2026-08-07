@@ -3,6 +3,7 @@ import './styles.css';
 const widgetScriptUrl =
   import.meta.env.VITE_BOTDOCK_WIDGET_URL ?? 'http://localhost:5173/src/main.ts';
 const apiBaseUrl = import.meta.env.VITE_BOTDOCK_API_BASE_URL ?? 'http://localhost:4000';
+const deploymentId = import.meta.env.VITE_BOTDOCK_DEPLOYMENT_ID ?? '';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <section class="page">
@@ -24,7 +25,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 const widgetScript = document.createElement('script');
 widgetScript.type = 'module';
 widgetScript.src = widgetScriptUrl;
-widgetScript.dataset.botId = 'demo-docs-assistant';
+widgetScript.dataset.deploymentId = deploymentId;
 widgetScript.dataset.apiBaseUrl = apiBaseUrl;
 widgetScript.dataset.welcomeMessage = 'Welcome to the demo documentation assistant.';
 document.body.appendChild(widgetScript);
