@@ -25,12 +25,18 @@ services:
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: botdock
+      MINIO_SECRET_KEY: botdock-local-password
+      MINIO_BUCKET: botdock-knowledge
     ports:
       - '4000:4000'
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/health | grep -q botdock-api']

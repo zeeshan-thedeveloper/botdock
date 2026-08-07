@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { BotsModule } from './bots/bots.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { KnowledgeModule } from './knowledge/knowledge.module.js';
 import { LoggerModule } from './logger/logger.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 
@@ -21,6 +22,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
     BotsModule,
     ProviderCredentialsModule,
     AiModule,
+    KnowledgeModule,
     HealthModule,
   ],
 })

@@ -210,3 +210,42 @@ export const updateBotSchema = z.object({
 });
 
 export type UpdateBotInput = z.infer<typeof updateBotSchema>;
+
+export const knowledgeSourceTypeSchema = z.enum(['file', 'text', 'faq']);
+
+export type KnowledgeSourceType = z.infer<typeof knowledgeSourceTypeSchema>;
+
+export const knowledgeSourceStatusSchema = z.enum(['processing', 'ready', 'failed']);
+
+export type KnowledgeSourceStatus = z.infer<typeof knowledgeSourceStatusSchema>;
+
+export const knowledgeSourceSchema = z.object({
+  id: z.string(),
+  organisationId: z.string(),
+  botId: z.string(),
+  type: knowledgeSourceTypeSchema,
+  name: z.string(),
+  status: knowledgeSourceStatusSchema,
+  embeddingProvider: modelProviderSchema,
+  embeddingModel: z.string(),
+  chunkCount: z.number().int().min(0),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export type KnowledgeSource = z.infer<typeof knowledgeSourceSchema>;
+
+export const knowledgeSourcesResponseSchema = z.object({
+  sources: z.array(knowledgeSourceSchema),
+});
+
+export type KnowledgeSourcesResponse = z.infer<typeof knowledgeSourcesResponseSchema>;
+
+export const createKnowledgeSourceSchema = z.object({
+  type: knowledgeSourceTypeSchema,
+  name: z.string().trim().min(1).max(160),
+  content: z.string().max(200_000).optional(),
+});
+
+export type CreateKnowledgeSourceInput = z.infer<typeof createKnowledgeSourceSchema>;
