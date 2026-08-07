@@ -6,6 +6,7 @@ import {
   authSessionResponseSchema,
   botSchema,
   botsResponseSchema,
+  chatStreamEventSchema,
   knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
@@ -16,6 +17,8 @@ import {
   type BotModelConfig,
   type BotResponseLength,
   type BotRetrievalMode,
+  type ChatCitationSource,
+  type ChatStreamEvent,
   type KnowledgeSource,
   type KnowledgeSourceType,
   type ModelProvider,
@@ -49,10 +52,14 @@ import {
   Rocket,
   Save,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Square,
   Sun,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   TriangleAlert,
   Upload,
@@ -2608,6 +2615,574 @@ function DeleteKnowledgeSourceModal({
   );
 }
 
+type PlaygroundMessageStatus = 'complete' | 'streaming' | 'error';
+
+type PlaygroundMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: PlaygroundMessageStatus;
+  citations?: ChatCitationSource[];
+  errorMessage?: string;
+  feedback?: 'up' | 'down' | null;
+};
+
+type PlaygroundTrace = {
+  requestId?: string;
+  model?: string;
+  contextTokens?: number;
+  retrievedChunks?: { label: string; score: number }[];
+  promptPreview?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  latencyMs?: number;
+  estCostUsd?: number;
+};
+
+const playgroundStarterPrompts = ['What can you help me with?', "What's your return policy?"];
+
+async function consumePlaygroundEventStream(
+  response: Response,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  if (!response.body) {
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const rawEvents = buffer.split('\n\n');
+    buffer = rawEvents.pop() ?? '';
+
+    for (const rawEvent of rawEvents) {
+      const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data:'));
+      if (!dataLine) continue;
+
+      const data = dataLine.slice(5).trim();
+      if (!data) continue;
+
+      const parsed = chatStreamEventSchema.safeParse(JSON.parse(data));
+      if (parsed.success) {
+        onEvent(parsed.data);
+      }
+    }
+  }
+}
+
+function TraceRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | number | undefined;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span
+        className={`min-w-0 flex-1 truncate text-right text-foreground ${mono ? 'font-mono' : ''}`}
+        title={value !== undefined ? String(value) : undefined}
+      >
+        {value ?? '—'}
+      </span>
+    </div>
+  );
+}
+
+function PlaygroundMessageBubble({
+  message,
+  isLast,
+  onRetry,
+  onCopy,
+  onFeedback,
+}: {
+  message: PlaygroundMessage;
+  isLast: boolean;
+  onRetry: () => void;
+  onCopy: () => void;
+  onFeedback: (feedback: 'up' | 'down') => void;
+}) {
+  if (message.role === 'user') {
+    return (
+      <div className="max-w-[65%] self-end whitespace-pre-wrap break-words rounded-xl rounded-br-sm bg-primary px-3.5 py-2.5 text-sm text-primary-foreground [overflow-wrap:anywhere]">
+        {message.content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-[75%] min-w-0 self-start whitespace-pre-wrap break-words rounded-xl rounded-bl-sm border border-border bg-surface-raised px-3.5 py-2.5 text-sm [overflow-wrap:anywhere]">
+      {message.content}
+      {message.status === 'streaming' ? (
+        <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-muted-foreground align-middle" />
+      ) : null}
+      {message.status === 'error' ? <p className="mt-2 text-xs text-danger">{message.errorMessage}</p> : null}
+      {message.citations && message.citations.length > 0 ? (
+        <div className="mt-2 border-t border-border pt-2 text-[11.5px] text-muted-foreground">
+          Source:{' '}
+          {message.citations
+            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+            .join(' · ')}
+        </div>
+      ) : null}
+      {message.status !== 'streaming' ? (
+        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+          {isLast ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 transition hover:text-foreground"
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+              Retry
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCopy}
+            className="inline-flex items-center gap-1 transition hover:text-foreground"
+          >
+            <Copy className="size-3" aria-hidden="true" />
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => onFeedback('up')}
+            aria-label="Good response"
+            className={`transition hover:text-foreground ${message.feedback === 'up' ? 'text-success' : ''}`}
+          >
+            <ThumbsUp className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onFeedback('down')}
+            aria-label="Bad response"
+            className={`transition hover:text-foreground ${message.feedback === 'down' ? 'text-danger' : ''}`}
+          >
+            <ThumbsDown className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BotDetailPlayground({
+  bot,
+  onOpenModelProviders,
+}: {
+  bot: BotRow;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [trace, setTrace] = useState<PlaygroundTrace | null>(null);
+  const [isTraceCollapsed, setIsTraceCollapsed] = useState(false);
+  const [streamError, setStreamError] = useState<{ code: string; message: string } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+
+  useEffect(() => {
+    messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight });
+  }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  async function sendMessage(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || isStreaming || !hasActiveCredential) {
+      return;
+    }
+
+    setStreamError(null);
+    setTrace(null);
+    setInput('');
+
+    const userMessageId = `user-${Date.now()}`;
+    const assistantMessageId = `assistant-${Date.now()}`;
+
+    setMessages((current) => [
+      ...current,
+      { id: userMessageId, role: 'user', content: trimmed, status: 'complete' },
+      { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' },
+    ]);
+    setIsStreaming(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(
+        new URL(
+          `/organisations/${workspaceOrganisationId}/bots/${bot.id}/playground/messages`,
+          apiBaseUrl,
+        ),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId, message: trimmed }),
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      await consumePlaygroundEventStream(response, (event) => {
+        if (event.type === 'token') {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, content: message.content + event.delta }
+                : message,
+            ),
+          );
+        } else if (event.type === 'citation') {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, citations: event.sources } : message,
+            ),
+          );
+        } else if (event.type === 'trace') {
+          setTrace((current) => ({
+            ...current,
+            requestId: event.requestId,
+            model: event.model,
+            contextTokens: event.contextTokens,
+            retrievedChunks: event.retrievedChunks,
+            promptPreview: event.promptPreview,
+          }));
+        } else if (event.type === 'usage') {
+          setTrace((current) => ({
+            ...current,
+            promptTokens: event.promptTokens,
+            completionTokens: event.completionTokens,
+            latencyMs: event.latencyMs,
+            estCostUsd: event.estCostUsd,
+          }));
+        } else if (event.type === 'done') {
+          setConversationId(event.conversationId);
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, status: 'complete' } : message,
+            ),
+          );
+        } else if (event.type === 'error') {
+          setStreamError({ code: event.code, message: event.message });
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, status: 'error', errorMessage: event.message }
+                : message,
+            ),
+          );
+        }
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId ? { ...message, status: 'complete' } : message,
+          ),
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Could not reach the playground.';
+        setStreamError({ code: 'network_error', message });
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === assistantMessageId ? { ...item, status: 'error', errorMessage: message } : item,
+          ),
+        );
+      }
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    }
+  }
+
+  function stopStreaming() {
+    abortControllerRef.current?.abort();
+  }
+
+  function clearConversation() {
+    abortControllerRef.current?.abort();
+    setMessages([]);
+    setConversationId(undefined);
+    setTrace(null);
+    setStreamError(null);
+    setIsStreaming(false);
+  }
+
+  function retryLastMessage() {
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+    if (lastUserMessage) {
+      void sendMessage(lastUserMessage.content);
+    }
+  }
+
+  async function copyMessage(content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      // Clipboard access denied — nothing actionable to surface here.
+    }
+  }
+
+  function toggleFeedback(messageId: string, feedback: 'up' | 'down') {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? { ...message, feedback: message.feedback === feedback ? null : feedback }
+          : message,
+      ),
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendMessage(input);
+  }
+
+  const lastAssistantMessageId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
+
+  return (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_1fr_280px]">
+      <Panel className="flex flex-col gap-4 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        <p className="text-sm font-semibold text-foreground">Playground</p>
+        <div className="grid gap-3 text-xs">
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Bot</p>
+            <p className="truncate rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.name}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Version</p>
+            <p className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              Draft (unpublished)
+            </p>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Model</p>
+            <p className="truncate rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.modelConfig.model}
+            </p>
+          </div>
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-muted-foreground">
+              <span>Temperature</span>
+              <span>{bot.modelConfig.temperature.toFixed(2)}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${bot.modelConfig.temperature * 100}%` }}
+              />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Knowledge mode</p>
+            <p className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.behaviorConfig.strictKnowledge
+                ? 'Strict (sources only)'
+                : 'Open (model knowledge allowed)'}
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="flex min-w-0 flex-col lg:h-[calc(100vh-220px)]">
+        <PanelHeader className="flex flex-row items-center justify-between py-3">
+          <PanelTitle className="text-sm">Chat preview</PanelTitle>
+          <button
+            type="button"
+            onClick={clearConversation}
+            disabled={messages.length === 0}
+            className="text-xs text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Clear conversation
+          </button>
+        </PanelHeader>
+
+        {!hasActiveCredential ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              title="Connect a provider key to use the playground"
+              description="This bot has no active provider credential. Connect one to start chatting."
+              action={
+                <Button size="sm" onClick={onOpenModelProviders}>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  Connect provider key
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div ref={messageListRef} className="flex-1 overflow-y-auto p-4">
+              {messages.length === 0 ? (
+                <div className="grid gap-4">
+                  <div className="max-w-[70%] rounded-xl rounded-bl-sm border border-border bg-surface-raised px-3.5 py-2.5 text-sm">
+                    {bot.behaviorConfig.welcomeMessage}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {playgroundStarterPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setInput(prompt)}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3.5">
+                  {messages.map((message) => (
+                    <PlaygroundMessageBubble
+                      key={message.id}
+                      message={message}
+                      isLast={message.id === lastAssistantMessageId}
+                      onRetry={retryLastMessage}
+                      onCopy={() => void copyMessage(message.content)}
+                      onFeedback={(feedback) => toggleFeedback(message.id, feedback)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {streamError ? (
+              <div className="mx-4 mb-3 flex items-start gap-2 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-xs text-danger">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">
+                  {streamError.code === 'no_provider_key' ? (
+                    <>
+                      {streamError.message}{' '}
+                      <button type="button" onClick={onOpenModelProviders} className="underline">
+                        Connect a key
+                      </button>
+                      .
+                    </>
+                  ) : (
+                    streamError.message
+                  )}
+                </span>
+              </div>
+            ) : null}
+
+            <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3.5">
+              <TextInput
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder="Type a message..."
+                disabled={isStreaming}
+                className="flex-1"
+              />
+              {isStreaming ? (
+                <Button type="button" variant="secondary" onClick={stopStreaming}>
+                  <Square className="size-4" aria-hidden="true" />
+                  Stop
+                </Button>
+              ) : (
+                <Button type="submit" disabled={!input.trim()}>
+                  <Send className="size-4" aria-hidden="true" />
+                  Send
+                </Button>
+              )}
+            </form>
+          </>
+        )}
+      </Panel>
+
+      <Panel className="flex flex-col gap-3.5 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">Debug trace</p>
+          <button
+            type="button"
+            onClick={() => setIsTraceCollapsed((current) => !current)}
+            className="text-xs text-muted-foreground transition hover:text-foreground"
+          >
+            {isTraceCollapsed ? 'Expand ›' : 'Collapse ›'}
+          </button>
+        </div>
+
+        {isTraceCollapsed ? null : trace ? (
+          <>
+            <div className="grid gap-2 text-xs">
+              <TraceRow label="Request ID" value={trace.requestId} mono />
+              <TraceRow label="Model" value={trace.model} />
+              <TraceRow
+                label="Latency"
+                value={trace.latencyMs !== undefined ? `${trace.latencyMs}ms` : undefined}
+              />
+              <TraceRow label="Input tokens" value={trace.promptTokens ?? trace.contextTokens} />
+              <TraceRow label="Output tokens" value={trace.completionTokens} />
+              <TraceRow
+                label="Est. cost"
+                value={trace.estCostUsd !== undefined ? `$${trace.estCostUsd.toFixed(4)}` : undefined}
+              />
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <p className="mb-2 text-xs text-muted-foreground">Retrieved chunks</p>
+              {trace.retrievedChunks && trace.retrievedChunks.length > 0 ? (
+                <div className="grid gap-1.5">
+                  {trace.retrievedChunks.map((chunk, index) => (
+                    <div
+                      key={`${chunk.label}-${index}`}
+                      className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-[11.5px]"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                        <span className="min-w-0 truncate">{chunk.label}</span>
+                        <span className="shrink-0 font-mono text-cyan-300">{chunk.score.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11.5px] text-muted-foreground">No chunks retrieved for this turn.</p>
+              )}
+            </div>
+
+            {trace.promptPreview ? (
+              <div className="border-t border-border pt-3">
+                <p className="mb-2 text-xs text-muted-foreground">Prompt preview</p>
+                <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-surface-raised p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+                  {trace.promptPreview}
+                </pre>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Send a message to see the trace for that turn.</p>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
 function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
   const tabLabel = botDetailTabs.find((item) => item.id === tab)?.label ?? 'Section';
 
@@ -2789,7 +3364,13 @@ function BotDetailScreen({
       {activeTab === 'knowledge' ? (
         <BotDetailKnowledge bot={bot} onOpenModelProviders={onOpenModelProviders} />
       ) : null}
-      {activeTab !== 'overview' && activeTab !== 'configuration' && activeTab !== 'knowledge' ? (
+      {activeTab === 'playground' ? (
+        <BotDetailPlayground bot={bot} onOpenModelProviders={onOpenModelProviders} />
+      ) : null}
+      {activeTab !== 'overview' &&
+      activeTab !== 'configuration' &&
+      activeTab !== 'knowledge' &&
+      activeTab !== 'playground' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
       ) : null}
     </div>
