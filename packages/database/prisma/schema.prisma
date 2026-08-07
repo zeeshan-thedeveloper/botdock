@@ -35,6 +35,24 @@ enum ProviderCredentialStatus {
   INVALID
 }
 
+enum KnowledgeSourceType {
+  FILE
+  TEXT
+  FAQ
+}
+
+enum KnowledgeSourceStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum DocumentParseStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
@@ -99,6 +117,9 @@ model Organisation {
   members             OrganisationMember[]
   bots                Bot[]
   providerCredentials ProviderCredential[]
+  knowledgeSources    KnowledgeSource[]
+  documents           Document[]
+  documentChunks      DocumentChunk[]
 
   @@map("organisations")
 }
@@ -151,6 +172,9 @@ model Bot {
   organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   createdBy          User                @relation("BotCreatedBy", fields: [createdById], references: [id])
   providerCredential ProviderCredential? @relation(fields: [providerCredentialId], references: [id], onDelete: SetNull)
+  knowledgeSources   KnowledgeSource[]
+  documents          Document[]
+  documentChunks     DocumentChunk[]
 
   @@index([organisationId])
   @@index([createdById])
@@ -179,4 +203,87 @@ model ProviderCredential {
   @@index([organisationId])
   @@index([createdById])
   @@map("provider_credentials")
+}
+
+/// A tenant-scoped knowledge base attached to one bot. The embedding model is
+/// pinned here because vectors from different models are not comparable —
+/// changing it requires a new source (or re-embedding every chunk) rather
+/// than an in-place update.
+model KnowledgeSource {
+  id                  String                 @id @default(cuid())
+  organisationId      String
+  botId               String
+  type                KnowledgeSourceType
+  name                String
+  status              KnowledgeSourceStatus  @default(PROCESSING)
+  embeddingProvider   ModelProvider
+  embeddingModel      String
+  embeddingDimensions Int
+  chunkCount          Int                    @default(0)
+  errorMessage        String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  chunks       DocumentChunk[]
+
+  @@index([organisationId, botId])
+  @@index([botId])
+  @@map("knowledge_sources")
+}
+
+/// Raw file/text metadata for one upload within a knowledge source. Object
+/// storage holds the bytes; this row tracks parse state on the way to chunks.
+model Document {
+  id                String              @id @default(cuid())
+  organisationId    String
+  botId             String
+  knowledgeSourceId String
+  fileName          String?
+  mimeType          String?
+  objectStorageKey  String?
+  checksum          String?
+  sizeBytes         Int?
+  parseStatus       DocumentParseStatus @default(PENDING)
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  organisation    Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot             Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  chunks          DocumentChunk[]
+
+  @@index([organisationId, botId])
+  @@index([knowledgeSourceId])
+  @@map("documents")
+}
+
+/// One retrievable, embedded slice of a document (or a directly-entered FAQ
+/// answer). `embedding` is a pgvector column (see migration SQL — Prisma has
+/// no native vector type, so it's declared `Unsupported` and queried via raw
+/// SQL in KN-004). Dimension is fixed by the source's pinned embedding model;
+/// switching models means re-embedding every chunk under a new dimension.
+model DocumentChunk {
+  id                String   @id @default(cuid())
+  organisationId    String
+  botId             String
+  knowledgeSourceId String
+  documentId        String?
+  content           String
+  metadata          Json?
+  embedding         Unsupported("vector(1536)")?
+  embeddingModel    String
+  createdAt         DateTime @default(now())
+
+  organisation    Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot             Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  document        Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, botId])
+  @@index([knowledgeSourceId])
+  @@map("document_chunks")
 }
