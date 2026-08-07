@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
@@ -7,7 +7,7 @@ const IV_LENGTH_BYTES = 12;
 
 @Injectable()
 export class ProviderCredentialCryptoService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(@Inject(ConfigService) private readonly configService: ConfigService) {}
 
   encrypt(secret: string): string {
     const iv = randomBytes(IV_LENGTH_BYTES);

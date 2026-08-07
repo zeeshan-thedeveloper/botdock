@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { ProviderCredential, ProviderCredentialsResponse } from '@botdock/contracts';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator.js';
@@ -10,7 +20,10 @@ import { UpsertProviderCredentialDto } from './provider-credentials.dto.js';
 @UseGuards(SessionAuthGuard)
 @Controller('organisations/:orgId/provider-credentials')
 export class ProviderCredentialsController {
-  constructor(private readonly providerCredentialsService: ProviderCredentialsService) {}
+  constructor(
+    @Inject(ProviderCredentialsService)
+    private readonly providerCredentialsService: ProviderCredentialsService,
+  ) {}
 
   @Get()
   @ApiOkResponse({ description: 'Provider credentials safe metadata.' })

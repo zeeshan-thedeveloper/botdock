@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -85,7 +86,7 @@ Escalate billing disputes, account access issues, and refund exceptions.`,
 
 @Injectable()
 export class BotsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listBots(organisationId: string, userId: string): Promise<BotsResponse> {
     await this.ensureOrganisationMember(organisationId, userId);

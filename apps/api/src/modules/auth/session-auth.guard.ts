@@ -1,4 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Inject,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { PrismaService } from '../database/prisma.service.js';
@@ -9,8 +15,11 @@ import type { AuthenticatedRequest } from './current-user.decorator.js';
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
   constructor(
+    @Inject(AuthService)
     private readonly authService: AuthService,
+    @Inject(ConfigService)
     private readonly configService: ConfigService,
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
   ) {}
 
@@ -18,7 +27,7 @@ export class SessionAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest & Request>();
     const sessionToken = readCookie(
       request,
-      this.configService.getOrThrow<string>('AUTH_COOKIE_NAME'),
+      this.configService?.getOrThrow<string>('AUTH_COOKIE_NAME') ?? 'botdock_session',
     );
     const session = await this.authService.getSessionUser(sessionToken);
 

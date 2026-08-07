@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { Bot, BotsResponse } from '@botdock/contracts';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator.js';
@@ -10,7 +10,7 @@ import { CreateBotDto, UpdateBotDto } from './bots.dto.js';
 @UseGuards(SessionAuthGuard)
 @Controller()
 export class BotsController {
-  constructor(private readonly botsService: BotsService) {}
+  constructor(@Inject(BotsService) private readonly botsService: BotsService) {}
 
   @Get('organisations/:orgId/bots')
   @ApiOkResponse({ description: 'Workspace bots with model configuration.' })

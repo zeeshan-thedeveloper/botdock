@@ -550,7 +550,17 @@ type DashboardRouteState = {
   activeItemId: string;
   selectedBotId: string | null;
   selectedBotTab: BotDetailTab;
+  selectedBotConfigurationPanel: BotConfigurationPanelId;
 };
+
+export function getCreatedBotDashboardRoute(botId: string): DashboardRouteState {
+  return {
+    activeItemId: 'bots',
+    selectedBotId: botId,
+    selectedBotTab: 'configuration',
+    selectedBotConfigurationPanel: 'identity',
+  };
+}
 
 const botKnowledgeHealth = [
   { label: 'Indexed chunks', value: '1,284', progress: 92 },
@@ -581,6 +591,10 @@ type BotConfiguration = {
   collectFeedback: boolean;
   humanHandoff: boolean;
 };
+
+export function areBotConfigurationsEqual(left: BotConfiguration, right: BotConfiguration) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 function getBotConfiguration(bot: BotRow): BotConfiguration {
   return {
@@ -641,9 +655,24 @@ function isBotDetailTab(value: string | null): value is BotDetailTab {
   return Boolean(value && botDetailTabs.some((tab) => tab.id === value));
 }
 
-function getInitialDashboardRoute(): DashboardRouteState {
+function isBotConfigurationPanel(value: string | null): value is BotConfigurationPanelId {
+  return (
+    value === 'identity' ||
+    value === 'instructions' ||
+    value === 'model' ||
+    value === 'conversation' ||
+    value === 'safety'
+  );
+}
+
+export function getInitialDashboardRoute(): DashboardRouteState {
   if (typeof window === 'undefined') {
-    return { activeItemId: 'overview', selectedBotId: null, selectedBotTab: 'overview' };
+    return {
+      activeItemId: 'overview',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
+    };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -651,11 +680,15 @@ function getInitialDashboardRoute(): DashboardRouteState {
 
   if (selectedBotId) {
     const selectedBotTab = params.get('tab');
+    const selectedBotConfigurationPanel = params.get('config');
 
     return {
       activeItemId: 'bots',
       selectedBotId,
       selectedBotTab: isBotDetailTab(selectedBotTab) ? selectedBotTab : 'overview',
+      selectedBotConfigurationPanel: isBotConfigurationPanel(selectedBotConfigurationPanel)
+        ? selectedBotConfigurationPanel
+        : 'identity',
     };
   }
 
@@ -666,10 +699,11 @@ function getInitialDashboardRoute(): DashboardRouteState {
     activeItemId,
     selectedBotId: null,
     selectedBotTab: 'overview',
+    selectedBotConfigurationPanel: 'identity',
   };
 }
 
-function writeDashboardRoute(routeState: DashboardRouteState) {
+export function writeDashboardRoute(routeState: DashboardRouteState) {
   if (typeof window === 'undefined') {
     return;
   }
@@ -682,6 +716,13 @@ function writeDashboardRoute(routeState: DashboardRouteState) {
 
     if (routeState.selectedBotTab !== 'overview') {
       params.set('tab', routeState.selectedBotTab);
+    }
+
+    if (
+      routeState.selectedBotTab === 'configuration' &&
+      routeState.selectedBotConfigurationPanel !== 'identity'
+    ) {
+      params.set('config', routeState.selectedBotConfigurationPanel);
     }
   } else if (routeState.activeItemId !== 'overview') {
     params.set('section', routeState.activeItemId);
@@ -1031,24 +1072,30 @@ function ConfigurationSection({
 }
 
 function BotDetailConfiguration({
+  activePanel,
   bot,
+  onPanelChange,
   onBotUpdated,
   onOpenModelProviders,
 }: {
+  activePanel: BotConfigurationPanelId;
   bot: BotRow;
+  onPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
   const [config, setConfig] = useState<BotConfiguration>(initialConfig);
-  const [activeConfigurationPanel, setActiveConfigurationPanel] =
-    useState<BotConfigurationPanelId>('identity');
+  const [savedConfig, setSavedConfig] = useState<BotConfiguration>(initialConfig);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
+  const [didLoadCredentials, setDidLoadCredentials] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<ProviderCredentialsMessage | null>(null);
-  const hasUnsavedChanges = JSON.stringify(config) !== JSON.stringify(initialConfig);
+  const savedConfigRef = useRef(savedConfig);
+  const activeBotIdRef = useRef(bot.id);
+  const hasUnsavedChanges = !areBotConfigurationsEqual(config, savedConfig);
   const activeCredentials = credentials.filter((credential) => credential.status === 'active');
   const selectedCredential =
     activeCredentials.find((credential) => credential.id === config.providerCredentialId) ?? null;
@@ -1056,6 +1103,19 @@ function BotDetailConfiguration({
     ? modelOptionsByProvider[selectedCredential.provider]
     : modelOptionsByProvider.openai;
   const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+  const publishReadiness = selectedCredential
+    ? {
+        tone: 'success' as const,
+        label: 'Ready to publish',
+        detail: `${getProviderLabel(selectedCredential.provider)} credential selected for draft model calls.`,
+      }
+    : {
+        tone: 'warning' as const,
+        label: 'Provider key required',
+        detail: isLoadingCredentials
+          ? 'Checking workspace provider credentials before publishing.'
+          : 'Choose an active provider key before publishing this draft.',
+      };
   const configurationPanels: Array<{
     id: BotConfigurationPanelId;
     label: string;
@@ -1069,8 +1129,33 @@ function BotDetailConfiguration({
   ];
 
   useEffect(() => {
-    setConfig(initialConfig);
-  }, [initialConfig]);
+    savedConfigRef.current = savedConfig;
+  }, [savedConfig]);
+
+  useEffect(() => {
+    if (saveMessage?.tone !== 'success') {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setSaveMessage(null), 3800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [saveMessage]);
+
+  useEffect(() => {
+    const botChanged = activeBotIdRef.current !== bot.id;
+    const previousSavedConfig = savedConfigRef.current;
+
+    activeBotIdRef.current = bot.id;
+    setSavedConfig(initialConfig);
+    setConfig((currentConfig) => {
+      if (botChanged || areBotConfigurationsEqual(currentConfig, previousSavedConfig)) {
+        return initialConfig;
+      }
+
+      return currentConfig;
+    });
+  }, [bot.id, initialConfig]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1100,17 +1185,12 @@ function BotDetailConfiguration({
         const payload = providerCredentialsResponseSchema.parse(await response.json());
 
         if (isMounted) {
-          const nextActiveCredentials = payload.credentials.filter(
-            (credential) => credential.status === 'active',
-          );
           setCredentials(payload.credentials);
-
-          if (!config.providerCredentialId && nextActiveCredentials[0]) {
-            updateConfig('providerCredentialId', nextActiveCredentials[0].id);
-          }
+          setDidLoadCredentials(true);
         }
       } catch (error) {
         if (isMounted) {
+          setDidLoadCredentials(false);
           setSaveMessage({
             tone: 'danger',
             text: error instanceof Error ? error.message : 'Could not load provider credentials.',
@@ -1128,13 +1208,32 @@ function BotDetailConfiguration({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl, config.providerCredentialId]);
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!didLoadCredentials || isLoadingCredentials || !config.providerCredentialId) {
+      return;
+    }
+
+    if (activeCredentials.some((credential) => credential.id === config.providerCredentialId)) {
+      return;
+    }
+
+    setConfig((currentConfig) => ({ ...currentConfig, providerCredentialId: null }));
+    setSaveMessage({
+      tone: 'warning',
+      text: 'The saved provider key is no longer active. Choose a new key before publishing.',
+    });
+  }, [activeCredentials, config.providerCredentialId, didLoadCredentials, isLoadingCredentials]);
 
   function updateConfig<Key extends keyof BotConfiguration>(
     key: Key,
     value: BotConfiguration[Key],
   ) {
     setConfig((current) => ({ ...current, [key]: value }));
+    setSaveMessage((currentMessage) =>
+      currentMessage?.tone === 'success' ? null : currentMessage,
+    );
   }
 
   async function saveConfiguration() {
@@ -1142,14 +1241,6 @@ function BotDetailConfiguration({
       setSaveMessage({
         tone: 'warning',
         text: 'Bot configuration needs a configured workspace organisation id.',
-      });
-      return;
-    }
-
-    if (!config.providerCredentialId) {
-      setSaveMessage({
-        tone: 'warning',
-        text: 'Select an active provider credential before saving model settings.',
       });
       return;
     }
@@ -1200,7 +1291,10 @@ function BotDetailConfiguration({
 
       const updatedBot = botSchema.parse(await response.json());
       onBotUpdated(updatedBot);
-      setSaveMessage({ tone: 'success', text: 'Bot model configuration saved.' });
+      const updatedConfig = getBotConfiguration(toBotRow(updatedBot));
+      setSavedConfig(updatedConfig);
+      setConfig(updatedConfig);
+      setSaveMessage({ tone: 'success', text: 'Draft configuration saved.' });
     } catch (error) {
       setSaveMessage({
         tone: 'danger',
@@ -1212,36 +1306,58 @@ function BotDetailConfiguration({
   }
 
   return (
-    <div className="grid gap-4 pb-20 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)]">
-      <div className="grid gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
+    <div className="grid gap-4 pb-28 xl:grid-cols-[minmax(0,820px)_minmax(280px,1fr)] xl:pb-24">
+      <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[210px_minmax(0,1fr)]">
         <Panel className="h-fit lg:sticky lg:top-20">
-          <PanelBody className="grid gap-1 p-2">
+          <PanelBody className="flex snap-x gap-1 overflow-x-auto p-2 lg:grid lg:overflow-visible">
             {configurationPanels.map((item) => {
               const Icon = item.icon;
-              const isActive = activeConfigurationPanel === item.id;
+              const isActive = activePanel === item.id;
 
               return (
                 <button
                   key={item.id}
                   type="button"
+                  aria-label={`Open ${item.label} configuration`}
                   aria-pressed={isActive}
-                  onClick={() => setActiveConfigurationPanel(item.id)}
-                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition ${
+                  onClick={() => onPanelChange(item.id)}
+                  className={`flex min-w-11 shrink-0 snap-start items-center justify-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-semibold transition sm:min-w-0 sm:justify-start lg:w-full ${
                     isActive
                       ? 'border-primary/40 bg-primary-muted text-primary'
                       : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                 >
                   <Icon className="size-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{item.label}</span>
+                  <span className="hidden truncate sm:inline">{item.label}</span>
                 </button>
               );
             })}
           </PanelBody>
         </Panel>
 
-        <div className="min-w-0">
-          {activeConfigurationPanel === 'identity' ? (
+        <div className="grid min-w-0 gap-4">
+          {saveMessage ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                saveMessage.tone === 'success'
+                  ? 'border-success/40 bg-success-muted text-success'
+                  : saveMessage.tone === 'warning'
+                    ? 'border-warning/40 bg-warning-muted text-warning'
+                    : 'border-danger/40 bg-danger-muted text-danger'
+              }`}
+            >
+              {saveMessage.tone === 'success' ? (
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              )}
+              <span>{saveMessage.text}</span>
+            </div>
+          ) : null}
+
+          {activePanel === 'identity' ? (
             <ConfigurationSection
               icon={Bot}
               title="Identity"
@@ -1279,7 +1395,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'instructions' ? (
+          {activePanel === 'instructions' ? (
             <ConfigurationSection
               icon={FileText}
               title="Instructions"
@@ -1317,30 +1433,12 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'model' ? (
+          {activePanel === 'model' ? (
             <ConfigurationSection
               icon={Brain}
               title="Model"
               description="Provider, retrieval, and response controls for draft and published versions."
             >
-              {saveMessage ? (
-                <div
-                  className={`flex items-start gap-3 rounded-md border px-3 py-2 text-sm ${
-                    saveMessage.tone === 'success'
-                      ? 'border-success/40 bg-success-muted text-success'
-                      : saveMessage.tone === 'warning'
-                        ? 'border-warning/40 bg-warning-muted text-warning'
-                        : 'border-danger/40 bg-danger-muted text-danger'
-                  }`}
-                >
-                  {saveMessage.tone === 'success' ? (
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  ) : (
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  )}
-                  <span>{saveMessage.text}</span>
-                </div>
-              ) : null}
               {activeCredentials.length === 0 && !isLoadingCredentials ? (
                 <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
                   <span>No active provider key exists for this workspace.</span>
@@ -1466,7 +1564,7 @@ function BotDetailConfiguration({
                     ))}
                   </SelectInput>
                 </Field>
-                <div className="rounded-md border border-border bg-surface-raised p-3 text-sm">
+                <div className="min-w-0 rounded-md border border-border bg-surface-raised p-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted-foreground">Save state</span>
                     <Badge tone={hasUnsavedChanges ? 'warning' : 'success'}>
@@ -1483,7 +1581,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'conversation' ? (
+          {activePanel === 'conversation' ? (
             <ConfigurationSection
               icon={MessageSquareText}
               title="Conversation"
@@ -1528,7 +1626,7 @@ function BotDetailConfiguration({
             </ConfigurationSection>
           ) : null}
 
-          {activeConfigurationPanel === 'safety' ? (
+          {activePanel === 'safety' ? (
             <ConfigurationSection
               icon={ShieldCheck}
               title="Safety"
@@ -1573,6 +1671,34 @@ function BotDetailConfiguration({
                 {hasUnsavedChanges ? 'Unsaved' : 'Clean'}
               </Badge>
             </div>
+            <div
+              className={`rounded-md border p-3 ${
+                publishReadiness.tone === 'success'
+                  ? 'border-success/40 bg-success-muted'
+                  : 'border-warning/40 bg-warning-muted'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  {publishReadiness.tone === 'success' ? (
+                    <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />
+                  ) : (
+                    <TriangleAlert className="size-4 shrink-0 text-warning" aria-hidden="true" />
+                  )}
+                  <p
+                    className={`text-sm font-semibold ${
+                      publishReadiness.tone === 'success' ? 'text-success' : 'text-warning'
+                    }`}
+                  >
+                    {publishReadiness.label}
+                  </p>
+                </div>
+                <Badge tone={publishReadiness.tone}>Publish</Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {publishReadiness.detail}
+              </p>
+            </div>
             <div className="grid gap-2">
               <Button
                 size="md"
@@ -1590,7 +1716,11 @@ function BotDetailConfiguration({
                 <Play className="size-4" aria-hidden="true" />
                 Preview
               </Button>
-              <Button variant="secondary" size="md">
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={!selectedCredential || isLoadingCredentials}
+              >
                 <Rocket className="size-4" aria-hidden="true" />
                 Publish changes
               </Button>
@@ -1598,7 +1728,10 @@ function BotDetailConfiguration({
                 variant="ghost"
                 size="md"
                 disabled={!hasUnsavedChanges}
-                onClick={() => setConfig(initialConfig)}
+                onClick={() => {
+                  setConfig(savedConfig);
+                  setSaveMessage(null);
+                }}
               >
                 <RotateCcw className="size-4" aria-hidden="true" />
                 Reset draft
@@ -1609,18 +1742,27 @@ function BotDetailConfiguration({
       </div>
 
       {hasUnsavedChanges ? (
-        <div className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-5xl flex-col gap-3 rounded-lg border border-warning/60 bg-surface-raised p-3 shadow-surface-md sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning">
+        <div className="fixed inset-x-2 bottom-2 z-30 mx-auto flex max-w-5xl flex-col gap-2 rounded-lg border border-warning/60 bg-surface-raised p-2.5 shadow-surface-md sm:inset-x-4 sm:bottom-4 sm:flex-row sm:items-center sm:justify-between sm:p-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="hidden size-8 shrink-0 items-center justify-center rounded-md bg-warning-muted text-warning sm:flex">
               <SlidersHorizontal className="size-4" aria-hidden="true" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">Unsaved configuration changes</p>
-              <p className="text-xs text-muted-foreground">Save this draft before publishing.</p>
+              <p className="truncate text-xs text-muted-foreground">
+                Save this draft before publishing.
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setConfig(initialConfig)}>
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setConfig(savedConfig);
+                setSaveMessage(null);
+              }}
+            >
               Reset
             </Button>
             <Button variant="secondary" size="sm">
@@ -1664,16 +1806,20 @@ function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) 
 
 function BotDetailScreen({
   activeTab,
+  activeConfigurationPanel,
   bot,
   onBack,
   onTabChange,
+  onConfigurationPanelChange,
   onBotUpdated,
   onOpenModelProviders,
 }: {
   activeTab: BotDetailTab;
+  activeConfigurationPanel: BotConfigurationPanelId;
   bot: BotRow;
   onBack: () => void;
   onTabChange: (tab: BotDetailTab) => void;
+  onConfigurationPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
@@ -1749,7 +1895,9 @@ function BotDetailScreen({
       {activeTab === 'overview' ? <BotDetailOverview bot={bot} /> : null}
       {activeTab === 'configuration' ? (
         <BotDetailConfiguration
+          activePanel={activeConfigurationPanel}
           bot={bot}
+          onPanelChange={onConfigurationPanelChange}
           onBotUpdated={onBotUpdated}
           onOpenModelProviders={onOpenModelProviders}
         />
@@ -3178,6 +3326,7 @@ function CreateBotModal({
     ? modelOptionsByProvider[selectedCredential.provider]
     : modelOptionsByProvider.openai;
   const modelSelectionDisabled = isLoadingCredentials || activeCredentials.length === 0;
+  const createDisabled = isSaving || isLoadingCredentials || !name.trim();
 
   useEffect(() => {
     let isMounted = true;
@@ -3240,8 +3389,8 @@ function CreateBotModal({
       return;
     }
 
-    if (!name.trim() || !providerCredentialId) {
-      setMessage({ tone: 'warning', text: 'Add a name and active provider credential.' });
+    if (!name.trim()) {
+      setMessage({ tone: 'warning', text: 'Add a bot name before creating the draft.' });
       return;
     }
 
@@ -3327,7 +3476,17 @@ function CreateBotModal({
                 <SelectInput
                   value={providerCredentialId ?? ''}
                   disabled={modelSelectionDisabled}
-                  onChange={(event) => setProviderCredentialId(event.target.value || null)}
+                  onChange={(event) => {
+                    const nextCredential =
+                      activeCredentials.find(
+                        (credential) => credential.id === event.target.value,
+                      ) ?? null;
+                    setProviderCredentialId(nextCredential?.id ?? null);
+
+                    if (nextCredential) {
+                      setModel(modelOptionsByProvider[nextCredential.provider][0] ?? model);
+                    }
+                  }}
                 >
                   <option value="">
                     {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
@@ -3351,7 +3510,9 @@ function CreateBotModal({
 
             {activeCredentials.length === 0 && !isLoadingCredentials ? (
               <div className="flex flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                <span>Add and validate a provider key before choosing a model.</span>
+                <span>
+                  Create a draft now, then add a validated provider key before publishing.
+                </span>
                 <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
                   <KeyRound className="size-4" aria-hidden="true" />
                   Model Providers
@@ -3443,7 +3604,7 @@ function CreateBotModal({
               <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSaving || modelSelectionDisabled}>
+              <Button type="submit" disabled={createDisabled}>
                 {isSaving ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (
@@ -3554,6 +3715,8 @@ export function AppShell() {
   const [activeItemId, setActiveItemId] = useState(initialRoute.activeItemId);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(initialRoute.selectedBotId);
   const [selectedBotTab, setSelectedBotTab] = useState<BotDetailTab>(initialRoute.selectedBotTab);
+  const [selectedBotConfigurationPanel, setSelectedBotConfigurationPanel] =
+    useState<BotConfigurationPanelId>(initialRoute.selectedBotConfigurationPanel);
   const [bots, setBots] = useState<BotRow[]>(botRows);
   const [botsMessage, setBotsMessage] = useState<ProviderCredentialsMessage | null>(null);
   const [isCreateBotOpen, setIsCreateBotOpen] = useState(false);
@@ -3689,27 +3852,54 @@ export function AppShell() {
     setIsCreateBotOpen(false);
   }
 
+  function applyDashboardRoute(routeState: DashboardRouteState) {
+    setActiveItemId(routeState.activeItemId);
+    setSelectedBotId(routeState.selectedBotId);
+    setSelectedBotTab(routeState.selectedBotTab);
+    setSelectedBotConfigurationPanel(routeState.selectedBotConfigurationPanel);
+    writeDashboardRoute(routeState);
+  }
+
   function openSection(sectionId: string) {
-    setActiveItemId(sectionId);
-    setSelectedBotId(null);
-    setSelectedBotTab('overview');
-    writeDashboardRoute({
+    applyDashboardRoute({
       activeItemId: sectionId,
       selectedBotId: null,
       selectedBotTab: 'overview',
+      selectedBotConfigurationPanel: 'identity',
     });
   }
 
-  function openBot(botId: string, tab: BotDetailTab = 'overview') {
-    setActiveItemId('bots');
-    setSelectedBotId(botId);
-    setSelectedBotTab(tab);
-    writeDashboardRoute({ activeItemId: 'bots', selectedBotId: botId, selectedBotTab: tab });
+  function openBot(
+    botId: string,
+    tab: BotDetailTab = 'overview',
+    configurationPanel: BotConfigurationPanelId = 'identity',
+  ) {
+    applyDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId: botId,
+      selectedBotTab: tab,
+      selectedBotConfigurationPanel: configurationPanel,
+    });
   }
 
   function changeBotTab(tab: BotDetailTab) {
     setSelectedBotTab(tab);
-    writeDashboardRoute({ activeItemId: 'bots', selectedBotId, selectedBotTab: tab });
+    writeDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId,
+      selectedBotTab: tab,
+      selectedBotConfigurationPanel,
+    });
+  }
+
+  function changeBotConfigurationPanel(panel: BotConfigurationPanelId) {
+    setSelectedBotConfigurationPanel(panel);
+    writeDashboardRoute({
+      activeItemId: 'bots',
+      selectedBotId,
+      selectedBotTab,
+      selectedBotConfigurationPanel: panel,
+    });
   }
 
   function closeBotDetail() {
@@ -3884,9 +4074,11 @@ export function AppShell() {
               {selectedBot ? (
                 <BotDetailScreen
                   activeTab={selectedBotTab}
+                  activeConfigurationPanel={selectedBotConfigurationPanel}
                   bot={selectedBot}
                   onBack={closeBotDetail}
                   onTabChange={changeBotTab}
+                  onConfigurationPanelChange={changeBotConfigurationPanel}
                   onBotUpdated={replaceBot}
                   onOpenModelProviders={openModelProviders}
                 />
@@ -3962,7 +4154,7 @@ export function AppShell() {
               onClose={() => setIsCreateBotOpen(false)}
               onBotCreated={(bot) => {
                 replaceBot(bot);
-                openBot(bot.id);
+                applyDashboardRoute(getCreatedBotDashboardRoute(bot.id));
               }}
               onOpenModelProviders={openModelProviders}
             />

@@ -47,6 +47,15 @@ describe('SessionAuthGuard', () => {
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
+  it('rejects unauthenticated requests without crashing if config injection is missing', async () => {
+    guard = new SessionAuthGuard(authService as never, undefined as never, prisma as never);
+    authService.getSessionUser.mockResolvedValue({ user: null });
+    const { context } = createContext();
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(authService.getSessionUser).toHaveBeenCalledWith(undefined);
+  });
+
   it('attaches the authenticated user to the request', async () => {
     authService.getSessionUser.mockResolvedValue({
       user: {
