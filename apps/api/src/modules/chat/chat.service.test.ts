@@ -273,4 +273,34 @@ describe('ChatService.runChat', () => {
     });
     expect(prisma.usageRecord.create).not.toHaveBeenCalled();
   });
+
+  it('treats a graceful abort stop (no thrown error, matching real ai-core behavior) as cancelled too', async () => {
+    // ai-core's OpenAIChatModelProvider stops silently on abort (`if (aborted) return;`)
+    // rather than throwing — the pipeline must not mistake that for a real completion.
+    prisma.bot.findFirst.mockResolvedValue(activeBot);
+    retrievalService.retrieve.mockResolvedValue(relevantRetrieval);
+    prisma.message.create
+      .mockResolvedValueOnce({ id: 'msg-user' })
+      .mockResolvedValueOnce({ id: 'msg-assistant' });
+
+    const controller = new AbortController();
+    aiProviderFactory.getChatProvider.mockResolvedValue({
+      streamChat: vi.fn(async function* (request: { signal?: AbortSignal }) {
+        yield { type: 'content', content: 'Partial' };
+        controller.abort();
+        if (request.signal?.aborted) {
+          return; // graceful stop, no throw — this is the real ai-core contract
+        }
+        yield { type: 'metadata', metadata: { promptTokens: 999, completionTokens: 999 } };
+      }),
+    });
+
+    const events = await collect(service.runChat(baseInput({ signal: controller.signal })));
+
+    expect(events.map((e) => e.type)).toEqual(['token', 'citation']);
+    expect(prisma.message.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({ content: 'Partial' }),
+    });
+    expect(prisma.usageRecord.create).not.toHaveBeenCalled();
+  });
 });

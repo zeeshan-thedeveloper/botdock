@@ -286,3 +286,10 @@ export const chatStreamEventSchema = z.discriminatedUnion('type', [
 ]);
 
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+
+export const playgroundMessageSchema = z.object({
+  conversationId: z.string().optional(),
+  message: z.string().trim().min(1).max(8000),
+});
+
+export type PlaygroundMessageInput = z.infer<typeof playgroundMessageSchema>;

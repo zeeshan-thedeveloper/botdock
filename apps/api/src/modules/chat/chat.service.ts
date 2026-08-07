@@ -156,6 +156,12 @@ export class ChatService {
       }
     }
 
+    // ai-core's providers stop gracefully (no thrown error) on abort, so the
+    // catch above may never run even though generation really was cancelled.
+    if (input.signal?.aborted) {
+      aborted = true;
+    }
+
     if (promptResult.usedChunks.length > 0) {
       yield {
         type: 'citation',
