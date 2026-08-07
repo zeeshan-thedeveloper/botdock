@@ -8,6 +8,7 @@ import { IngestionWorkerService } from './ingestion-worker.service.js';
 import { KnowledgeController } from './knowledge.controller.js';
 import { KnowledgeService } from './knowledge.service.js';
 import { ObjectStorageService } from './object-storage.service.js';
+import { RetrievalService } from './retrieval.service.js';
 
 @Module({
   imports: [AuthModule, DatabaseModule, AiModule],
@@ -17,7 +18,9 @@ import { ObjectStorageService } from './object-storage.service.js';
     ObjectStorageService,
     IngestionQueueService,
     IngestionWorkerService,
+    RetrievalService,
     SessionAuthGuard,
   ],
+  exports: [RetrievalService],
 })
 export class KnowledgeModule {}
