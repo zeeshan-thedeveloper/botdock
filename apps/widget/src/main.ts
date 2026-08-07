@@ -1,4 +1,4 @@
-import { createMockTransport } from './mock-transport.js';
+import { createHttpTransport } from './http-transport.js';
 import type { WidgetConfig } from './types.js';
 import { mountWidget } from './widget.js';
 
@@ -34,8 +34,7 @@ function mountBotDockWidget(config = readConfig(resolveScriptElement())) {
   host.setAttribute('data-botdock-root', config.deploymentId || 'unconfigured');
   document.body.appendChild(host);
 
-  // TODO(CHAT-006): swap for the real /public/bots/:deploymentId/messages transport.
-  return mountWidget(host, config, createMockTransport());
+  return mountWidget(host, config, createHttpTransport(config));
 }
 
 declare global {

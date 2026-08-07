@@ -20,6 +20,31 @@ const ICON_CLOSE =
 const ICON_SEND =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';
 
+/**
+ * Persisted across reloads so a returning visitor keeps both their identity
+ * (visitorId) and their open conversation thread (conversationId) — without
+ * the latter, every page refresh would silently start a brand-new
+ * conversation server-side and the assistant would lose all prior context.
+ * localStorage can throw (Safari private mode, sandboxed iframes); never let
+ * widget mount fail because of it — a fresh id per session is an acceptable
+ * fallback.
+ */
+function readPersisted(deploymentId: string, kind: 'visitor' | 'conversation'): string | undefined {
+  try {
+    return window.localStorage.getItem(`botdock_${kind}_${deploymentId}`) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function persist(deploymentId: string, kind: 'visitor' | 'conversation', value: string): void {
+  try {
+    window.localStorage.setItem(`botdock_${kind}_${deploymentId}`, value);
+  } catch {
+    // Best-effort continuity only.
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -274,8 +299,8 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
   let isOpen = false;
   let messages: WidgetMessage[] = [];
   let isStreaming = false;
-  let conversationId: string | undefined;
-  let visitorId: string | undefined;
+  let conversationId: string | undefined = readPersisted(config.deploymentId, 'conversation');
+  let visitorId: string | undefined = readPersisted(config.deploymentId, 'visitor');
   let banner: BannerState | null = null;
   const expandedSources = new Set<string>();
   let rateLimitTimer: ReturnType<typeof setInterval> | undefined;
@@ -411,6 +436,7 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
       }
       if (step.value?.visitorId) {
         visitorId = step.value.visitorId;
+        persist(config.deploymentId, 'visitor', visitorId);
       }
       updateMessage(assistantMessageId, { status: 'complete' });
     } catch (error) {
@@ -438,6 +464,7 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
       updateMessage(assistantMessageId, { citations: event.sources });
     } else if (event.type === 'done') {
       conversationId = event.conversationId;
+      persist(config.deploymentId, 'conversation', event.conversationId);
     } else if (event.type === 'error') {
       updateMessage(assistantMessageId, { status: 'error', errorMessage: event.message });
     }
