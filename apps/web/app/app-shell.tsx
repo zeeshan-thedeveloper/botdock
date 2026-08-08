@@ -2752,7 +2752,7 @@ function TraceRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex min-w-0 items-center justify-between gap-2">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <span
         className={`min-w-0 flex-1 truncate text-right text-foreground ${mono ? 'font-mono' : ''}`}
@@ -3182,7 +3182,7 @@ function BotDetailPlayground({
         )}
       </Panel>
 
-      <Panel className="flex flex-col gap-3.5 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+      <Panel className="flex min-w-0 flex-col gap-3.5 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold text-foreground">Debug trace</p>
           <button
@@ -3196,7 +3196,7 @@ function BotDetailPlayground({
 
         {isTraceCollapsed ? null : trace ? (
           <>
-            <div className="grid gap-2 text-xs">
+            <div className="grid min-w-0 gap-2 text-xs">
               <TraceRow label="Request ID" value={trace.requestId} mono />
               <TraceRow label="Model" value={trace.model} />
               <TraceRow
