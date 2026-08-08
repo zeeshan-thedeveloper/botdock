@@ -1,10 +1,5 @@
-import {
-  TransportError,
-  type ChatStreamEvent,
-  type MessageTransport,
-  type WidgetConfig,
-  type WidgetMessage,
-} from './types.js';
+import { BotDockClientError, type BotDockClient, type ChatStreamEvent } from '@botdock/sdk';
+import type { WidgetConfig, WidgetMessage } from './types.js';
 
 type BannerState =
   | { kind: 'rate_limited'; message: string; secondsLeft: number }
@@ -21,25 +16,26 @@ const ICON_SEND =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>';
 
 /**
- * Persisted across reloads so a returning visitor keeps both their identity
- * (visitorId) and their open conversation thread (conversationId) — without
- * the latter, every page refresh would silently start a brand-new
- * conversation server-side and the assistant would lose all prior context.
- * localStorage can throw (Safari private mode, sandboxed iframes); never let
- * widget mount fail because of it — a fresh id per session is an acceptable
+ * Persisted across reloads so a returning visitor keeps their open
+ * conversation thread — without this, every page refresh would silently
+ * start a brand-new conversation server-side and the assistant would lose
+ * all prior context. (Visitor identity itself is persisted separately, by
+ * the injected BotDockClient storage adapter in main.ts.) localStorage can
+ * throw (Safari private mode, sandboxed iframes); never let widget mount
+ * fail because of it — a fresh conversation per session is an acceptable
  * fallback.
  */
-function readPersisted(deploymentId: string, kind: 'visitor' | 'conversation'): string | undefined {
+function readPersistedConversationId(deploymentId: string): string | undefined {
   try {
-    return window.localStorage.getItem(`botdock_${kind}_${deploymentId}`) ?? undefined;
+    return window.localStorage.getItem(`botdock_conversation_${deploymentId}`) ?? undefined;
   } catch {
     return undefined;
   }
 }
 
-function persist(deploymentId: string, kind: 'visitor' | 'conversation', value: string): void {
+function persistConversationId(deploymentId: string, conversationId: string): void {
   try {
-    window.localStorage.setItem(`botdock_${kind}_${deploymentId}`, value);
+    window.localStorage.setItem(`botdock_conversation_${deploymentId}`, conversationId);
   } catch {
     // Best-effort continuity only.
   }
@@ -264,7 +260,7 @@ function styles(): string {
   `;
 }
 
-export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: MessageTransport) {
+export function mountWidget(host: HTMLElement, config: WidgetConfig, client: BotDockClient) {
   host.style.setProperty('--botdock-accent', config.accentColor);
   const shadowRoot = host.attachShadow({ mode: 'open' });
   shadowRoot.innerHTML = `
@@ -299,8 +295,7 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
   let isOpen = false;
   let messages: WidgetMessage[] = [];
   let isStreaming = false;
-  let conversationId: string | undefined = readPersisted(config.deploymentId, 'conversation');
-  let visitorId: string | undefined = readPersisted(config.deploymentId, 'visitor');
+  let conversationId: string | undefined = readPersistedConversationId(config.deploymentId);
   let banner: BannerState | null = null;
   const expandedSources = new Set<string>();
   let rateLimitTimer: ReturnType<typeof setInterval> | undefined;
@@ -427,22 +422,15 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
     activeAbortController = controller;
 
     try {
-      const generator = transport({ message: text, conversationId, visitorId, signal: controller.signal });
-      let step = await generator.next();
-      while (!step.done) {
-        handleStreamEvent(step.value, assistantMessageId);
+      for await (const event of client.sendMessage({ message: text, conversationId, signal: controller.signal })) {
+        handleStreamEvent(event, assistantMessageId);
         render();
-        step = await generator.next();
-      }
-      if (step.value?.visitorId) {
-        visitorId = step.value.visitorId;
-        persist(config.deploymentId, 'visitor', visitorId);
       }
       updateMessage(assistantMessageId, { status: 'complete' });
     } catch (error) {
       if (controller.signal.aborted) {
         updateMessage(assistantMessageId, { status: 'complete' });
-      } else if (error instanceof TransportError) {
+      } else if (error instanceof BotDockClientError) {
         handleTransportError(error, assistantMessageId);
       } else {
         banner = { kind: 'network', message: 'Could not reach the assistant. Please try again.' };
@@ -464,14 +452,14 @@ export function mountWidget(host: HTMLElement, config: WidgetConfig, transport: 
       updateMessage(assistantMessageId, { citations: event.sources });
     } else if (event.type === 'done') {
       conversationId = event.conversationId;
-      persist(config.deploymentId, 'conversation', event.conversationId);
+      persistConversationId(config.deploymentId, event.conversationId);
     } else if (event.type === 'error') {
       updateMessage(assistantMessageId, { status: 'error', errorMessage: event.message });
     }
     // 'usage' is intentionally handled silently — no public-facing UI for it.
   }
 
-  function handleTransportError(error: TransportError, assistantMessageId: string) {
+  function handleTransportError(error: BotDockClientError, assistantMessageId: string) {
     messages = messages.filter((message) => message.id !== assistantMessageId);
     if (error.kind === 'rate_limited') {
       startRateLimitCountdown(error.retryAfterSeconds ?? 30, error.message);

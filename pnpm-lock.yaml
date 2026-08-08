@@ -198,6 +198,10 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
   apps/widget:
+    dependencies:
+      '@botdock/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
     devDependencies:
       '@botdock/eslint-config':
         specifier: workspace:*
@@ -328,6 +332,10 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
   packages/sdk:
+    dependencies:
+      '@botdock/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       '@botdock/eslint-config':
         specifier: workspace:*

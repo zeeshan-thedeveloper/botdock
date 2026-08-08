@@ -10,6 +10,9 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@botdock/sdk": "workspace:*"
+  },
   "devDependencies": {
     "@botdock/eslint-config": "workspace:*",
     "@botdock/typescript-config": "workspace:*",

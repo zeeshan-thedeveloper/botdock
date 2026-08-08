@@ -1,12 +1,18 @@
-import type { ChatStreamEvent } from './types.js';
+import type { ChatStreamEvent } from '@botdock/contracts';
 
 const KNOWN_EVENT_TYPES = new Set(['token', 'citation', 'usage', 'done', 'error']);
 
 /**
- * Deliberately not using zod here to keep the widget bundle dependency-light;
- * this is a first-party endpoint, so a shape check on `type` is enough.
- * `trace` is never sent on the public path, but is ignored defensively
- * rather than treated as a parse failure if it ever were.
+ * Deliberately a lightweight shape check rather than
+ * chatStreamEventSchema.safeParse: the primary consumer of this package is
+ * the embeddable widget (apps/widget), which has a hard small-bundle
+ * requirement — pulling zod's runtime into every page that loads the widget
+ * isn't a trade worth making to validate a first-party, already
+ * contract-tested endpoint. `@botdock/contracts` is still a real dependency
+ * for the *type* import above, which costs nothing at runtime (type-only
+ * imports are elided by the compiler). `trace` is never sent on the public
+ * path but is ignored defensively rather than treated as a parse failure if
+ * it ever were.
  */
 function parseChatStreamEvent(raw: unknown): ChatStreamEvent | null {
   if (typeof raw !== 'object' || raw === null || !('type' in raw)) {

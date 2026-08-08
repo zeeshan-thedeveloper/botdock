@@ -1,6 +1,24 @@
-import { createHttpTransport } from './http-transport.js';
+import { BotDockClient, type SessionStorageLike } from '@botdock/sdk';
 import type { WidgetConfig } from './types.js';
 import { mountWidget } from './widget.js';
+
+/** Best-effort: localStorage can throw (Safari private mode, sandboxed iframes); fall back to in-memory for the page's lifetime. */
+const localStorageAdapter: SessionStorageLike = {
+  getItem(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      // Best-effort continuity only.
+    }
+  },
+};
 
 const DEFAULT_CONFIG: WidgetConfig = {
   deploymentId: '',
@@ -34,7 +52,12 @@ function mountBotDockWidget(config = readConfig(resolveScriptElement())) {
   host.setAttribute('data-botdock-root', config.deploymentId || 'unconfigured');
   document.body.appendChild(host);
 
-  return mountWidget(host, config, createHttpTransport(config));
+  const client = new BotDockClient({
+    baseUrl: config.apiBaseUrl,
+    deploymentId: config.deploymentId,
+    storage: localStorageAdapter,
+  });
+  return mountWidget(host, config, client);
 }
 
 declare global {
