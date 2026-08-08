@@ -1,14 +1,30 @@
 import 'reflect-metadata';
+import { join } from 'node:path';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './modules/app.module.js';
 import { AllExceptionsFilter } from './shared/all-exceptions.filter.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
   const configService = app.get(ConfigService);
+
+  // Stable, unversioned embed URL (see deployment.service.ts) — the widget
+  // bundle baked into this image's Docker build at infrastructure/docker/api.Dockerfile.
+  // A plain <script defer src=...> load isn't subject to CORS, so no headers
+  // needed here beyond a correct content type.
+  app.useStaticAssets(join(process.cwd(), 'public'), {
+    index: false,
+    setHeaders: (res, path) => {
+      if (path.endsWith('widget.js')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=300');
+      }
+    },
+  });
   const corsOrigins = configService
     .getOrThrow<string>('CORS_ORIGINS')
     .split(',')

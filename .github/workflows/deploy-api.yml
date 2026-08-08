@@ -47,6 +47,8 @@ jobs:
           context: .
           file: infrastructure/docker/api.Dockerfile
           push: true
+          build-args: |
+            VITE_PUBLIC_API_URL=https://botdock-api.zeeshanahmed.app
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.event.workflow_run.head_sha || github.sha }}
