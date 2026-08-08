@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Inject, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type {
+  ActivityTimeseriesResponse,
   ConversationDetailResponse,
   ConversationsListResponse,
   MessageFeedbackResponse,
@@ -24,6 +25,15 @@ export class ConversationsController {
     @Query() query: ListConversationsQueryDto,
   ): Promise<ConversationsListResponse> {
     return this.conversationsService.listConversations(organisationId, user.id, query);
+  }
+
+  @Get('timeseries')
+  @ApiOkResponse({ description: 'Real, zero-filled daily conversation/message counts for the last 30 days.' })
+  getActivityTimeseries(
+    @Param('orgId') organisationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ActivityTimeseriesResponse> {
+    return this.conversationsService.getActivityTimeseries(organisationId, user.id);
   }
 
   @Get(':conversationId')

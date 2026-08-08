@@ -378,6 +378,7 @@ export class BotsService {
       knowledgeSourceCount: 0,
       readyKnowledgeSourceCount: 0,
       totalIndexedChunks: 0,
+      allowedDomainCount: 0,
       citationCoverage: null,
       positiveFeedbackRate: null,
     };
@@ -390,7 +391,7 @@ export class BotsService {
       return stats;
     }
 
-    const [conversationCounts, costSums, knowledgeGroups, messageAggregates] = await Promise.all([
+    const [conversationCounts, costSums, knowledgeGroups, domainCounts, messageAggregates] = await Promise.all([
       this.prisma.conversation.groupBy({
         by: ['botId'],
         where: { organisationId, botId: { in: botIds } },
@@ -406,6 +407,11 @@ export class BotsService {
         where: { organisationId, botId: { in: botIds } },
         _count: { _all: true },
         _sum: { chunkCount: true },
+      }),
+      this.prisma.allowedDomain.groupBy({
+        by: ['botId'],
+        where: { organisationId, botId: { in: botIds } },
+        _count: { _all: true },
       }),
       this.prisma.$queryRaw<MessageAggregateRow[]>`
         SELECT
@@ -448,6 +454,11 @@ export class BotsService {
         entry.readyKnowledgeSourceCount += row._count._all;
         entry.totalIndexedChunks += row._sum.chunkCount ?? 0;
       }
+    }
+
+    for (const row of domainCounts) {
+      const entry = stats.get(row.botId);
+      if (entry) entry.allowedDomainCount = row._count._all;
     }
 
     for (const row of messageAggregates) {

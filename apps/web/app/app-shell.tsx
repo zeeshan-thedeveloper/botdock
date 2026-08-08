@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
+  activityTimeseriesResponseSchema,
   allowedDomainSchema,
   allowedDomainsResponseSchema,
   authSessionResponseSchema,
@@ -15,6 +16,7 @@ import {
   knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
+  type ActivityTimeseriesResponse,
   type AllowedDomain,
   type AuthSessionUser,
   type Bot as BotRecord,
@@ -190,21 +192,6 @@ const settingsNavItem: NavItem = {
   icon: Settings,
   description: 'Account preferences and local session controls.',
 };
-
-const overviewMetrics = [
-  { label: 'Active bots', value: '0', trend: '0 this month', tone: 'neutral' as const },
-  { label: 'Conversations', value: '0', trend: '0%', tone: 'neutral' as const },
-  { label: 'Messages', value: '0', trend: '0%', tone: 'neutral' as const },
-  { label: 'Positive feedback', value: '0%', trend: '0 pt', tone: 'neutral' as const },
-  { label: 'Est. AI cost', value: '$0.00', trend: '0% budget', tone: 'neutral' as const },
-];
-
-const botUsage = [
-  { name: 'Support Assistant', messages: '16,204', value: 78 },
-  { name: 'Docs Assistant', messages: '11,850', value: 57 },
-  { name: 'Onboarding Helper', messages: '6,120', value: 32 },
-  { name: 'Sales Qualifier', messages: '4,302', value: 22 },
-];
 
 type BotStatus = 'Published' | 'Draft' | 'Processing' | 'Error' | 'Disabled';
 type BotFilter = 'All' | BotStatus;
@@ -681,21 +668,50 @@ function UserAvatar({ user, className = 'size-6' }: { user: AuthSessionUser; cla
   );
 }
 
-function OverviewLineChart() {
+function OverviewLineChart({ days }: { days: ActivityTimeseriesResponse['days'] }) {
+  const hasActivity = days.some((day) => day.conversations > 0 || day.messages > 0);
+
+  if (!hasActivity) {
+    return (
+      <div className="flex h-44 items-center justify-center text-sm text-muted-foreground">
+        No activity in the last 30 days yet.
+      </div>
+    );
+  }
+
+  const width = 520;
+  const height = 176;
+  const topPadding = 6;
+  const bottomPadding = 6;
+  const maxValue = Math.max(1, ...days.map((day) => Math.max(day.conversations, day.messages)));
+  const stepX = days.length > 1 ? width / (days.length - 1) : 0;
+
+  function toPoints(values: number[]) {
+    return values
+      .map((value, index) => {
+        const x = index * stepX;
+        const y = height - bottomPadding - (value / maxValue) * (height - topPadding - bottomPadding);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
+
   return (
     <div>
-      <svg className="h-44 w-full" viewBox="0 0 520 176" fill="none" aria-hidden="true">
+      <svg className="h-44 w-full" viewBox={`0 0 ${width} ${height}`} fill="none" aria-hidden="true">
         <path d="M0 145H520M0 105H520M0 65H520M0 25H520" stroke="hsl(var(--color-border))" />
-        <path
-          d="M0 132L40 120L80 112L120 118L160 92L200 101L240 72L280 80L320 58L360 63L400 42L440 48L480 31L520 36"
+        <polyline
+          points={toPoints(days.map((day) => day.conversations))}
           stroke="hsl(var(--color-primary))"
           strokeWidth="2.5"
+          fill="none"
         />
-        <path
-          d="M0 154L40 151L80 146L120 149L160 138L200 140L240 126L280 128L320 116L360 119L400 104L440 109L480 95L520 99"
+        <polyline
+          points={toPoints(days.map((day) => day.messages))}
           stroke="#22D3EE"
           strokeDasharray="4 4"
           strokeWidth="2"
+          fill="none"
         />
       </svg>
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
@@ -712,7 +728,49 @@ function OverviewLineChart() {
   );
 }
 
-function OverviewDashboard() {
+function OverviewDashboard({
+  bots,
+  activityDays,
+}: {
+  bots: BotRow[];
+  activityDays: ActivityTimeseriesResponse['days'];
+}) {
+  const activeBots = bots.filter((bot) => bot.status === 'Published').length;
+  const totalConversations = bots.reduce((sum, bot) => sum + bot.stats.conversationCount, 0);
+  const totalMessages = bots.reduce((sum, bot) => sum + bot.stats.messageCount, 0);
+  const totalCost = bots.reduce((sum, bot) => sum + bot.stats.estCostUsd, 0);
+  const feedbackRates = bots
+    .map((bot) => bot.stats.positiveFeedbackRate)
+    .filter((rate): rate is number => rate !== null);
+  const positiveFeedbackRate =
+    feedbackRates.length > 0 ? feedbackRates.reduce((sum, rate) => sum + rate, 0) / feedbackRates.length : null;
+
+  const metrics = [
+    { label: 'Active bots', value: formatCount(activeBots) },
+    { label: 'Conversations', value: formatCount(totalConversations) },
+    { label: 'Messages', value: formatCount(totalMessages) },
+    {
+      label: 'Positive feedback',
+      value: positiveFeedbackRate !== null ? formatPercent(positiveFeedbackRate) : 'No feedback yet',
+    },
+    { label: 'Est. AI cost', value: `$${totalCost.toFixed(2)}` },
+  ];
+
+  const checklist: [string, boolean][] = [
+    ['Create a bot', bots.length > 0],
+    ['Upload knowledge', bots.some((bot) => bot.stats.knowledgeSourceCount > 0)],
+    ['Test the bot', bots.some((bot) => bot.stats.conversationCount > 0)],
+    ['Publish the bot', bots.some((bot) => bot.status === 'Published')],
+    ['Add to a website', bots.some((bot) => bot.stats.allowedDomainCount > 0)],
+  ];
+  const completedCount = checklist.filter(([, complete]) => complete).length;
+
+  const topBotsByMessages = [...bots]
+    .filter((bot) => bot.stats.messageCount > 0)
+    .toSorted((a, b) => b.stats.messageCount - a.stats.messageCount)
+    .slice(0, 4);
+  const maxMessages = Math.max(1, ...topBotsByMessages.map((bot) => bot.stats.messageCount));
+
   return (
     <div className="grid gap-6">
       <Panel>
@@ -724,21 +782,14 @@ function OverviewDashboard() {
                 Complete the production launch checklist for this workspace.
               </PanelDescription>
             </div>
-            <span className="text-xs font-medium text-muted-foreground">3 of 5 complete</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              {completedCount} of {checklist.length} complete
+            </span>
           </div>
-          <ProgressBar value={60} />
+          <ProgressBar value={(completedCount / checklist.length) * 100} />
           <div className="mt-5 grid gap-3 md:grid-cols-5">
-            {[
-              ['Create a bot', true],
-              ['Upload knowledge', true],
-              ['Test the bot', true],
-              ['Publish the bot', false],
-              ['Add to a website', false],
-            ].map(([label, complete]) => (
-              <div
-                key={String(label)}
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-              >
+            {checklist.map(([label, complete]) => (
+              <div key={label} className="flex items-center gap-2 text-sm text-muted-foreground">
                 {complete ? (
                   <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden="true" />
                 ) : (
@@ -752,7 +803,7 @@ function OverviewDashboard() {
       </Panel>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {overviewMetrics.map((metric) => (
+        {metrics.map((metric) => (
           <MetricCard key={metric.label} {...metric} />
         ))}
       </div>
@@ -762,27 +813,31 @@ function OverviewDashboard() {
           <PanelHeader>
             <PanelTitle>Conversations over time</PanelTitle>
             <PanelDescription>
-              Production traffic and message volume across all bots.
+              Real conversation and message volume across all bots (excludes Playground testing).
             </PanelDescription>
           </PanelHeader>
           <PanelBody>
-            <OverviewLineChart />
+            <OverviewLineChart days={activityDays} />
           </PanelBody>
         </Panel>
 
         <Panel>
           <PanelHeader>
             <PanelTitle>Messages by bot</PanelTitle>
-            <PanelDescription>Top production bots by message volume.</PanelDescription>
+            <PanelDescription>Top bots by message volume.</PanelDescription>
           </PanelHeader>
           <PanelBody className="grid gap-4">
-            {botUsage.map((bot) => (
-              <ProgressBar
-                key={bot.name}
-                value={bot.value}
-                label={`${bot.name} · ${bot.messages}`}
-              />
-            ))}
+            {topBotsByMessages.length > 0 ? (
+              topBotsByMessages.map((bot) => (
+                <ProgressBar
+                  key={bot.id}
+                  value={(bot.stats.messageCount / maxMessages) * 100}
+                  label={`${bot.name} · ${formatCount(bot.stats.messageCount)}`}
+                />
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No messages yet.</p>
+            )}
           </PanelBody>
         </Panel>
       </div>
@@ -5709,13 +5764,37 @@ export function AppShell() {
     } catch (error) {
       setBotsMessage({
         tone: 'warning',
-        text:
-          error instanceof Error
-            ? `${error.message} Showing sample bots.`
-            : 'Could not load persisted bots. Showing sample bots.',
+        text: error instanceof Error ? error.message : 'Could not load persisted bots.',
       });
     }
   }, [apiBaseUrl]);
+
+  const [activityDays, setActivityDays] = useState<ActivityTimeseriesResponse['days']>([]);
+
+  const loadActivityTimeseries = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/conversations/timeseries`, apiBaseUrl),
+        { credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      setActivityDays(activityTimeseriesResponseSchema.parse(await response.json()).days);
+    } catch {
+      // Overview chart just falls back to its own "not enough data" state.
+    }
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    void loadActivityTimeseries();
+  }, [loadActivityTimeseries]);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(themeStorageKey);
@@ -6024,7 +6103,7 @@ export function AppShell() {
                   onOpenModelProviders={openModelProviders}
                 />
               ) : activeItemId === 'overview' ? (
-                <OverviewDashboard />
+                <OverviewDashboard bots={bots} activityDays={activityDays} />
               ) : activeItemId === 'bots' ? (
                 <div className="grid gap-4">
                   {botsMessage ? (

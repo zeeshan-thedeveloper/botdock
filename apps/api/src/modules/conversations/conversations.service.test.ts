@@ -10,6 +10,7 @@ function createPrismaMock() {
     organisationMember: { findUnique: vi.fn() },
     conversation: { findMany: vi.fn(), findFirst: vi.fn() },
     message: { updateMany: vi.fn() },
+    $queryRaw: vi.fn(),
   };
 }
 
@@ -283,6 +284,34 @@ describe('ConversationsService', () => {
         data: { feedback: null },
       });
       expect(result).toEqual({ messageId: 'msg-2', feedback: null });
+    });
+  });
+
+  describe('getActivityTimeseries', () => {
+    it('blocks access when the user is not an organisation member', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue(null);
+
+      await expect(service.getActivityTimeseries('org-1', 'user-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    });
+
+    it('maps zero-filled daily rows to ISO date strings', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.$queryRaw.mockResolvedValue([
+        { day: new Date('2026-08-07T00:00:00.000Z'), conversations: 2, messages: 9 },
+        { day: new Date('2026-08-08T00:00:00.000Z'), conversations: 0, messages: 0 },
+      ]);
+
+      const result = await service.getActivityTimeseries('org-1', 'user-1');
+
+      expect(result).toEqual({
+        days: [
+          { date: '2026-08-07', conversations: 2, messages: 9 },
+          { date: '2026-08-08', conversations: 0, messages: 0 },
+        ],
+      });
     });
   });
 });

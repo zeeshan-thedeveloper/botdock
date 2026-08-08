@@ -166,6 +166,7 @@ describe('bot inventory search metadata', () => {
         knowledgeSourceCount: 0,
         readyKnowledgeSourceCount: 0,
         totalIndexedChunks: 0,
+        allowedDomainCount: 0,
         citationCoverage: null,
         positiveFeedbackRate: null,
       },

@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+  ActivityTimeseriesResponse,
   ConversationDetailResponse,
   ConversationsListResponse,
   ConversationUsageSummary,
@@ -184,6 +185,44 @@ export class ConversationsService {
     }
 
     return { messageId, feedback };
+  }
+
+  /** Real, zero-filled daily counts for the last 30 days — excludes PLAYGROUND traffic, same convention as listConversations. */
+  async getActivityTimeseries(
+    organisationId: string,
+    userId: string,
+  ): Promise<ActivityTimeseriesResponse> {
+    await this.ensureOrganisationMember(organisationId, userId);
+
+    const rows = await this.prisma.$queryRaw<{ day: Date; conversations: number; messages: number }[]>`
+      SELECT
+        d::date AS day,
+        COALESCE(conv.count, 0)::int AS conversations,
+        COALESCE(msg.count, 0)::int AS messages
+      FROM generate_series(CURRENT_DATE - INTERVAL '29 days', CURRENT_DATE, INTERVAL '1 day') AS d
+      LEFT JOIN (
+        SELECT date_trunc('day', "startedAt") AS day, COUNT(*) AS count
+        FROM "conversations"
+        WHERE "organisationId" = ${organisationId} AND source != 'PLAYGROUND'
+        GROUP BY 1
+      ) conv ON conv.day = d
+      LEFT JOIN (
+        SELECT date_trunc('day', m."createdAt") AS day, COUNT(*) AS count
+        FROM "messages" m
+        JOIN "conversations" c ON c.id = m."conversationId"
+        WHERE c."organisationId" = ${organisationId} AND c.source != 'PLAYGROUND'
+        GROUP BY 1
+      ) msg ON msg.day = d
+      ORDER BY d
+    `;
+
+    return {
+      days: rows.map((row) => ({
+        date: row.day.toISOString().slice(0, 10),
+        conversations: row.conversations,
+        messages: row.messages,
+      })),
+    };
   }
 
   private buildPreview(content: string | undefined): string | null {

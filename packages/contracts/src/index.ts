@@ -186,6 +186,7 @@ export const botStatsSchema = z.object({
   knowledgeSourceCount: z.number().int().min(0),
   readyKnowledgeSourceCount: z.number().int().min(0),
   totalIndexedChunks: z.number().int().min(0),
+  allowedDomainCount: z.number().int().min(0),
   citationCoverage: z.number().min(0).max(1).nullable(),
   positiveFeedbackRate: z.number().min(0).max(1).nullable(),
 });
@@ -437,3 +438,15 @@ export const conversationDetailResponseSchema = z.object({
 });
 
 export type ConversationDetailResponse = z.infer<typeof conversationDetailResponseSchema>;
+
+export const activityDayPointSchema = z.object({
+  date: z.string(),
+  conversations: z.number().int().min(0),
+  messages: z.number().int().min(0),
+});
+
+export const activityTimeseriesResponseSchema = z.object({
+  days: z.array(activityDayPointSchema),
+});
+
+export type ActivityTimeseriesResponse = z.infer<typeof activityTimeseriesResponseSchema>;

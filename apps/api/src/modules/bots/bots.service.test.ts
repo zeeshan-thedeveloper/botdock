@@ -34,6 +34,9 @@ function createPrismaMock() {
     knowledgeSource: {
       groupBy: vi.fn().mockResolvedValue([]),
     },
+    allowedDomain: {
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
     $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(),
   };
@@ -52,6 +55,7 @@ const zeroStats = {
   knowledgeSourceCount: 0,
   readyKnowledgeSourceCount: 0,
   totalIndexedChunks: 0,
+  allowedDomainCount: 0,
   citationCoverage: null,
   positiveFeedbackRate: null,
 };
@@ -185,6 +189,7 @@ describe('BotsService', () => {
       { botId: 'bot-1', status: 'READY', _count: { _all: 2 }, _sum: { chunkCount: 40 } },
       { botId: 'bot-1', status: 'FAILED', _count: { _all: 1 }, _sum: { chunkCount: 0 } },
     ]);
+    prisma.allowedDomain.groupBy.mockResolvedValue([{ botId: 'bot-1', _count: { _all: 2 } }]);
     prisma.$queryRaw.mockResolvedValue([
       {
         botId: 'bot-1',
@@ -205,6 +210,7 @@ describe('BotsService', () => {
       knowledgeSourceCount: 3,
       readyKnowledgeSourceCount: 2,
       totalIndexedChunks: 40,
+      allowedDomainCount: 2,
       citationCoverage: 0.5,
       positiveFeedbackRate: 0.75,
     });
