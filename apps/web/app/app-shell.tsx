@@ -7,6 +7,8 @@ import {
   botSchema,
   botsResponseSchema,
   chatStreamEventSchema,
+  conversationDetailResponseSchema,
+  conversationsListResponseSchema,
   knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
@@ -3190,156 +3192,31 @@ function BotDetailPlayground({
   );
 }
 
-// UI-016: conversation inspection screens. Backed by mock data until
-// CONV-002 wires the real GET /organisations/:orgId/conversations API
-// (CONV-001); types are the real @botdock/contracts response shapes so
-// swapping the data source won't require touching this rendering code.
-// `status` has no backend equivalent yet (CONV-001's data model doesn't
-// have one) — it's a UI-only field CONV-002 will need to either derive
-// heuristically from real data or drop.
-type ConversationStatus = 'active' | 'completed' | 'needs_review' | 'failed' | 'archived';
-
-type MockConversationRow = ConversationSummary & { status: ConversationStatus };
-
-type MockConversationDetail = ConversationDetailResponse & { status: ConversationStatus };
-
-const conversationStatusLabel: Record<ConversationStatus, string> = {
-  active: 'Active',
-  completed: 'Completed',
-  needs_review: 'Needs review',
-  failed: 'Failed',
-  archived: 'Archived',
-};
-
-function conversationStatusTone(status: ConversationStatus) {
-  if (status === 'completed') return 'success' as const;
-  if (status === 'failed') return 'danger' as const;
-  if (status === 'needs_review') return 'warning' as const;
-  if (status === 'active') return 'primary' as const;
-  return 'neutral' as const;
-}
-
+// CONV-002: wired to the real GET /organisations/:orgId/conversations
+// (list, cursor-paginated) and .../conversations/:id (detail) endpoints
+// from CONV-001. UI-016 previously backed this with mock data that
+// included a `status` taxonomy (Active/Needs review/Completed/...) with no
+// real equivalent — CONV-001's data model has no status field, and
+// fabricating one for real conversations would be actively misleading to
+// someone debugging their bot. Dropped in favor of showing the one honest
+// signal that IS derivable from real data: an assistant message with empty
+// content (ChatService still persists a Message row when the provider call
+// fails mid-stream, just with no tokens and no UsageRecord) renders as
+// "No response was generated" in the transcript.
 const conversationSourceLabel: Record<ChatConversationSource, string> = {
   WIDGET: 'Widget',
   PLAYGROUND: 'Playground',
   API: 'API',
 };
 
-const mockConversations: MockConversationRow[] = [
-  {
-    id: 'conv_mock_1',
-    botId: 'mock-bot-1',
-    botName: 'Support Bot',
-    source: 'WIDGET',
-    visitorId: 'visitor_8f2a1c',
-    messageCount: 6,
-    lastMessagePreview: 'Thanks, that resolved it! Appreciate the quick help.',
-    lastMessageAt: new Date(Date.now() - 4 * 60_000).toISOString(),
-    usage: { promptTokens: 812, completionTokens: 214, estCostUsd: 0.0138 },
-    status: 'active',
-  },
-  {
-    id: 'conv_mock_2',
-    botId: 'mock-bot-1',
-    botName: 'Support Bot',
-    source: 'WIDGET',
-    visitorId: 'visitor_1b77e0',
-    messageCount: 4,
-    lastMessagePreview: "That's not right — I already tried resetting my password twice.",
-    lastMessageAt: new Date(Date.now() - 47 * 60_000).toISOString(),
-    usage: { promptTokens: 540, completionTokens: 96, estCostUsd: 0.0071 },
-    status: 'needs_review',
-  },
-  {
-    id: 'conv_mock_3',
-    botId: 'mock-bot-2',
-    botName: 'Docs Assistant',
-    source: 'WIDGET',
-    visitorId: 'visitor_c930aa',
-    messageCount: 8,
-    lastMessagePreview: 'Got it, thanks for walking me through the API setup.',
-    lastMessageAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
-    usage: { promptTokens: 1_640, completionTokens: 402, estCostUsd: 0.0289 },
-    status: 'completed',
-  },
-  {
-    id: 'conv_mock_4',
-    botId: 'mock-bot-1',
-    botName: 'Support Bot',
-    source: 'WIDGET',
-    visitorId: 'visitor_44df20',
-    messageCount: 2,
-    lastMessagePreview: 'Sorry, something went wrong on our end. Please try again shortly.',
-    lastMessageAt: new Date(Date.now() - 26 * 3_600_000).toISOString(),
-    usage: { promptTokens: 210, completionTokens: 0, estCostUsd: 0.0009 },
-    status: 'failed',
-  },
-  {
-    id: 'conv_mock_5',
-    botId: 'mock-bot-2',
-    botName: 'Docs Assistant',
-    source: 'API',
-    visitorId: null,
-    messageCount: 12,
-    lastMessagePreview: 'Confirmed — the export job finished with no errors.',
-    lastMessageAt: new Date(Date.now() - 9 * 86_400_000).toISOString(),
-    usage: { promptTokens: 3_120, completionTokens: 880, estCostUsd: 0.0612 },
-    status: 'archived',
-  },
-];
-
-const mockConversationDetails: Record<string, MockConversationDetail> = Object.fromEntries(
-  mockConversations.map((conversation) => {
-    const startedAt = new Date(
-      new Date(conversation.lastMessageAt).getTime() - conversation.messageCount * 45_000,
-    ).toISOString();
-
-    const messages: ConversationDetailResponse['messages'] = [
-      {
-        id: `${conversation.id}_msg_1`,
-        role: 'USER',
-        content:
-          conversation.status === 'failed'
-            ? 'I need help with my order, it never arrived.'
-            : 'Hi, can you help me with something?',
-        createdAt: startedAt,
-        model: null,
-        promptTokens: null,
-        completionTokens: null,
-        latencyMs: null,
-        estCostUsd: null,
-        citations: [],
-      },
-      {
-        id: `${conversation.id}_msg_2`,
-        role: 'ASSISTANT',
-        content:
-          conversation.status === 'failed'
-            ? 'Sorry, something went wrong on our end. Please try again shortly.'
-            : (conversation.lastMessagePreview ?? 'Happy to help with that.'),
-        createdAt: conversation.lastMessageAt,
-        model: conversation.status === 'failed' ? null : 'gpt-4o-mini',
-        promptTokens: conversation.status === 'failed' ? null : conversation.usage.promptTokens,
-        completionTokens: conversation.status === 'failed' ? null : conversation.usage.completionTokens,
-        latencyMs: conversation.status === 'failed' ? null : 640,
-        estCostUsd: conversation.status === 'failed' ? null : conversation.usage.estCostUsd,
-        citations:
-          conversation.status === 'failed'
-            ? []
-            : [{ label: 'Getting started guide', location: 'Section 2', score: 0.91, knowledgeSourceId: 'src_1' }],
-      },
-    ];
-
-    return [conversation.id, { ...conversation, startedAt, messages }];
-  }),
-);
-
 function ConversationRowCard({
   conversation,
   onOpen,
+  hideBotName = false,
 }: {
-  conversation: MockConversationRow;
+  conversation: ConversationSummary;
   onOpen: (id: string) => void;
+  hideBotName?: boolean;
 }) {
   return (
     <button
@@ -3347,15 +3224,11 @@ function ConversationRowCard({
       onClick={() => onOpen(conversation.id)}
       className="grid min-w-0 gap-2 border-b border-border p-4 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
     >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+      {hideBotName ? null : (
         <p className="min-w-0 flex-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
           {conversation.botName}
         </p>
-        <StatusBadge
-          status={conversationStatusLabel[conversation.status]}
-          tone={conversationStatusTone(conversation.status)}
-        />
-      </div>
+      )}
       <p className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
         {conversation.lastMessagePreview ?? 'No messages yet.'}
       </p>
@@ -3370,44 +3243,128 @@ function ConversationRowCard({
   );
 }
 
-function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolean }) {
+function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const hideBotColumn = Boolean(lockedBotId);
+
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'All' | ChatConversationSource>('All');
-  const [statusFilter, setStatusFilter] = useState<'All' | ConversationStatus>('All');
+
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationDetailResponse | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const sourceFilters: Array<'All' | ChatConversationSource> = ['All', 'WIDGET', 'PLAYGROUND', 'API'];
-  const statusFilters: Array<'All' | ConversationStatus> = [
-    'All',
-    'active',
-    'needs_review',
-    'completed',
-    'failed',
-    'archived',
-  ];
 
-  const filteredConversations = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  // Debounced so search-as-you-type doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
-    return mockConversations.filter((conversation) => {
-      if (sourceFilter !== 'All' && conversation.source !== sourceFilter) return false;
-      if (statusFilter !== 'All' && conversation.status !== statusFilter) return false;
-      if (
-        query &&
-        !conversation.botName.toLowerCase().includes(query) &&
-        !(conversation.lastMessagePreview ?? '').toLowerCase().includes(query) &&
-        !(conversation.visitorId ?? '').toLowerCase().includes(query)
-      ) {
-        return false;
+  const buildListUrl = useCallback(
+    (cursor?: string) => {
+      const params = new URLSearchParams();
+      if (lockedBotId) params.set('botId', lockedBotId);
+      if (sourceFilter !== 'All') params.set('source', sourceFilter);
+      if (search) params.set('search', search);
+      if (cursor) params.set('cursor', cursor);
+      const url = new URL(`/organisations/${workspaceOrganisationId}/conversations`, apiBaseUrl);
+      url.search = params.toString();
+      return url;
+    },
+    [apiBaseUrl, lockedBotId, sourceFilter, search],
+  );
+
+  const loadFirstPage = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setLoadError('Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load conversations.');
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch(buildListUrl(), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
       }
-      return true;
-    });
-  }, [search, sourceFilter, statusFilter]);
+      const payload = conversationsListResponseSchema.parse(await response.json());
+      setConversations(payload.conversations);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not load conversations.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildListUrl]);
 
-  const selected = selectedConversationId ? mockConversationDetails[selectedConversationId] : undefined;
+  useEffect(() => {
+    void loadFirstPage();
+  }, [loadFirstPage]);
 
-  if (selected) {
-    return <ConversationDetailView conversation={selected} onBack={() => setSelectedConversationId(null)} />;
+  async function handleLoadMore() {
+    if (!nextCursor) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await fetch(buildListUrl(nextCursor), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      const payload = conversationsListResponseSchema.parse(await response.json());
+      setConversations((current) => [...current, ...payload.conversations]);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not load more conversations.');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
+
+  async function openConversation(id: string) {
+    setSelectedConversationId(id);
+    setSelectedConversation(null);
+    setDetailError(null);
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/conversations/${id}`, apiBaseUrl),
+        { credentials: 'include' },
+      );
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setSelectedConversation(conversationDetailResponseSchema.parse(await response.json()));
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : 'Could not load this conversation.');
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
+  function closeConversation() {
+    setSelectedConversationId(null);
+    setSelectedConversation(null);
+    setDetailError(null);
+  }
+
+  if (selectedConversationId) {
+    return (
+      <ConversationDetailView
+        conversation={selectedConversation}
+        isLoading={isDetailLoading}
+        error={detailError}
+        onBack={closeConversation}
+      />
+    );
   }
 
   return (
@@ -3429,9 +3386,9 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
               />
               <TextInput
                 aria-label="Search conversations"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by bot, visitor, or message content..."
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Search by visitor or message content..."
                 className="pl-9"
               />
             </div>
@@ -3453,27 +3410,21 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
                 </Button>
               ))}
             </div>
-
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
-                <Filter className="size-3.5" aria-hidden="true" />
-                Status
-              </div>
-              {statusFilters.map((filter) => (
-                <Button
-                  key={filter}
-                  variant={statusFilter === filter ? 'primary' : 'secondary'}
-                  size="sm"
-                  onClick={() => setStatusFilter(filter)}
-                  aria-pressed={statusFilter === filter}
-                >
-                  {filter === 'All' ? 'All' : conversationStatusLabel[filter]}
-                </Button>
-              ))}
-            </div>
           </div>
 
-          {filteredConversations.length === 0 ? (
+          {loadError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{loadError}</span>
+            </div>
+          ) : null}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading conversations...
+            </div>
+          ) : conversations.length === 0 ? (
             <EmptyState
               title="No conversations found"
               description="Try a different filter or search term."
@@ -3481,11 +3432,12 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
           ) : (
             <>
               <div className="overflow-hidden rounded-lg border border-border md:hidden">
-                {filteredConversations.map((conversation) => (
+                {conversations.map((conversation) => (
                   <ConversationRowCard
                     key={conversation.id}
                     conversation={conversation}
-                    onOpen={setSelectedConversationId}
+                    onOpen={openConversation}
+                    hideBotName={hideBotColumn}
                   />
                 ))}
               </div>
@@ -3493,27 +3445,26 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
               <DataTable className="w-full table-fixed" wrapperClassName="hidden md:block">
                 <TableHeader>
                   <TableRow>
-                    {hideBotColumn ? null : <TableHead className="w-[22%] px-3 sm:px-4">Bot</TableHead>}
-                    <TableHead className={hideBotColumn ? 'w-[40%] px-3 sm:px-4' : 'w-[28%] px-3 sm:px-4'}>
+                    {hideBotColumn ? null : <TableHead className="w-[26%] px-3 sm:px-4">Bot</TableHead>}
+                    <TableHead className={hideBotColumn ? 'w-[48%] px-3 sm:px-4' : 'w-[34%] px-3 sm:px-4'}>
                       Last message
                     </TableHead>
                     <TableHead className="w-24 px-3 sm:px-4">Source</TableHead>
-                    <TableHead className="w-28 px-3 sm:px-4">Status</TableHead>
                     <TableHead className="w-16 px-3 sm:px-4">Msgs</TableHead>
                     <TableHead className="w-32 px-3 sm:px-4">Last activity</TableHead>
                   </TableRow>
                 </TableHeader>
                 <tbody>
-                  {filteredConversations.map((conversation) => (
+                  {conversations.map((conversation) => (
                     <TableRow
                       key={conversation.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => setSelectedConversationId(conversation.id)}
+                      onClick={() => openConversation(conversation.id)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
-                          setSelectedConversationId(conversation.id);
+                          openConversation(conversation.id);
                         }
                       }}
                       className="cursor-pointer"
@@ -3529,12 +3480,6 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
                       <TableCell className="text-muted-foreground">
                         {conversationSourceLabel[conversation.source]}
                       </TableCell>
-                      <TableCell>
-                        <StatusBadge
-                          status={conversationStatusLabel[conversation.status]}
-                          tone={conversationStatusTone(conversation.status)}
-                        />
-                      </TableCell>
                       <TableCell className="font-mono text-muted-foreground">
                         {conversation.messageCount}
                       </TableCell>
@@ -3545,6 +3490,15 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
                   ))}
                 </tbody>
               </DataTable>
+
+              {nextCursor ? (
+                <div className="flex justify-center pt-1">
+                  <Button variant="secondary" size="sm" onClick={() => void handleLoadMore()} disabled={isLoadingMore}>
+                    {isLoadingMore ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+                    Load more
+                  </Button>
+                </div>
+              ) : null}
             </>
           )}
         </PanelBody>
@@ -3555,9 +3509,13 @@ function ConversationsScreen({ hideBotColumn = false }: { hideBotColumn?: boolea
 
 function ConversationDetailView({
   conversation,
+  isLoading,
+  error,
   onBack,
 }: {
-  conversation: MockConversationDetail;
+  conversation: ConversationDetailResponse | null;
+  isLoading: boolean;
+  error: string | null;
   onBack: () => void;
 }) {
   return (
@@ -3570,161 +3528,188 @@ function ConversationDetailView({
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
           <span className="shrink-0">Conversations</span>
-          <span className="text-muted-foreground/60">/</span>
-          <span className="min-w-0 truncate text-foreground">{conversation.botName}</span>
+          {conversation ? (
+            <>
+              <span className="text-muted-foreground/60">/</span>
+              <span className="min-w-0 truncate text-foreground">{conversation.botName}</span>
+            </>
+          ) : null}
         </button>
 
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold text-foreground">{conversation.botName}</h1>
-            <StatusBadge
-              status={conversationStatusLabel[conversation.status]}
-              tone={conversationStatusTone(conversation.status)}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled
-              title="Not available yet — read-only inspection for now."
-            >
-              <Flag className="size-4" aria-hidden="true" />
-              Mark for review
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled
-              title="Not available yet — read-only inspection for now."
-            >
-              <Archive className="size-4" aria-hidden="true" />
-              Archive
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled
-              title="Not available yet — read-only inspection for now."
-            >
-              <Download className="size-4" aria-hidden="true" />
-              Export
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[1fr_320px]">
-        <Panel className="min-w-0">
-          <PanelHeader>
-            <PanelTitle>Transcript</PanelTitle>
-            <PanelDescription>{conversation.messages.length} messages</PanelDescription>
-          </PanelHeader>
-          <PanelBody className="grid min-w-0 gap-3">
-            {conversation.messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex min-w-0 flex-col gap-1 ${message.role === 'USER' ? 'items-end' : 'items-start'}`}
+        {conversation ? (
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-foreground">{conversation.botName}</h1>
+              <Badge tone="neutral">{conversationSourceLabel[conversation.source]}</Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
               >
-                <div
-                  className={`max-w-[85%] min-w-0 whitespace-pre-wrap break-words rounded-xl px-3.5 py-2.5 text-sm [overflow-wrap:anywhere] ${
-                    message.role === 'USER'
-                      ? 'rounded-br-sm bg-primary text-primary-foreground'
-                      : 'rounded-bl-sm border border-border bg-surface-raised text-foreground'
-                  }`}
-                >
-                  {message.content}
-                  {message.citations.length > 0 ? (
-                    <div className="mt-2 border-t border-border/60 pt-2 text-[11.5px] opacity-80">
-                      Source:{' '}
-                      {message.citations
-                        .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
-                        .join(' · ')}
-                    </div>
-                  ) : null}
-                </div>
-                <span className="px-1 text-[11px] text-muted-foreground">
-                  {formatTimestamp(message.createdAt)}
-                </span>
-              </div>
-            ))}
-          </PanelBody>
-        </Panel>
-
-        <div className="grid min-w-0 gap-4">
-          <Panel className="min-w-0">
-            <PanelHeader>
-              <PanelTitle>Context</PanelTitle>
-            </PanelHeader>
-            <PanelBody className="grid gap-2 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <User className="size-3.5" aria-hidden="true" />
-                  Visitor
-                </span>
-                <span className="min-w-0 truncate font-mono text-xs text-foreground">
-                  {conversation.visitorId ?? '—'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Source</span>
-                <span className="text-foreground">{conversationSourceLabel[conversation.source]}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Started</span>
-                <span className="text-foreground">{formatTimestamp(conversation.startedAt)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Last message</span>
-                <span className="text-foreground">{formatTimestamp(conversation.lastMessageAt)}</span>
-              </div>
-            </PanelBody>
-          </Panel>
-
-          <Panel className="min-w-0">
-            <PanelHeader>
-              <PanelTitle>Debug</PanelTitle>
-              <PanelDescription>Per-turn model, tokens, latency, and cost.</PanelDescription>
-            </PanelHeader>
-            <PanelBody className="grid gap-3">
-              {conversation.messages
-                .filter((message) => message.role === 'ASSISTANT')
-                .map((message) => (
-                  <div key={message.id} className="grid gap-1 rounded-md border border-border p-3 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Model</span>
-                      <span className="font-mono text-foreground">{message.model ?? '—'}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Tokens</span>
-                      <span className="font-mono text-foreground">
-                        {message.promptTokens ?? 0} in / {message.completionTokens ?? 0} out
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Latency</span>
-                      <span className="font-mono text-foreground">
-                        {message.latencyMs !== null ? `${message.latencyMs}ms` : '—'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-muted-foreground">Est. cost</span>
-                      <span className="font-mono text-foreground">
-                        {message.estCostUsd !== null ? `$${message.estCostUsd.toFixed(4)}` : '—'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </PanelBody>
-          </Panel>
-        </div>
+                <Flag className="size-4" aria-hidden="true" />
+                Mark for review
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
+              >
+                <Archive className="size-4" aria-hidden="true" />
+                Archive
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
+              >
+                <Download className="size-4" aria-hidden="true" />
+                Export
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
+
+      {error ? (
+        <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{error}</span>
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Loading conversation...
+        </div>
+      ) : conversation ? (
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[1fr_320px]">
+          <Panel className="min-w-0">
+            <PanelHeader>
+              <PanelTitle>Transcript</PanelTitle>
+              <PanelDescription>{conversation.messages.length} messages</PanelDescription>
+            </PanelHeader>
+            <PanelBody className="grid min-w-0 gap-3">
+              {conversation.messages.map((message) => {
+                const isEmptyAssistantReply = message.role === 'ASSISTANT' && message.content.trim().length === 0;
+
+                return (
+                  <div
+                    key={message.id}
+                    className={`flex min-w-0 flex-col gap-1 ${message.role === 'USER' ? 'items-end' : 'items-start'}`}
+                  >
+                    <div
+                      className={`max-w-[85%] min-w-0 whitespace-pre-wrap break-words rounded-xl px-3.5 py-2.5 text-sm [overflow-wrap:anywhere] ${
+                        message.role === 'USER'
+                          ? 'rounded-br-sm bg-primary text-primary-foreground'
+                          : isEmptyAssistantReply
+                            ? 'rounded-bl-sm border border-danger/40 bg-danger-muted text-danger'
+                            : 'rounded-bl-sm border border-border bg-surface-raised text-foreground'
+                      }`}
+                    >
+                      {isEmptyAssistantReply ? (
+                        <span className="italic">No response was generated for this turn.</span>
+                      ) : (
+                        message.content
+                      )}
+                      {message.citations.length > 0 ? (
+                        <div className="mt-2 border-t border-border/60 pt-2 text-[11.5px] opacity-80">
+                          Source:{' '}
+                          {message.citations
+                            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+                            .join(' · ')}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className="px-1 text-[11px] text-muted-foreground">
+                      {formatTimestamp(message.createdAt)}
+                    </span>
+                  </div>
+                );
+              })}
+            </PanelBody>
+          </Panel>
+
+          <div className="grid min-w-0 gap-4">
+            <Panel className="min-w-0">
+              <PanelHeader>
+                <PanelTitle>Context</PanelTitle>
+              </PanelHeader>
+              <PanelBody className="grid gap-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <User className="size-3.5" aria-hidden="true" />
+                    Visitor
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                    {conversation.visitorId ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Source</span>
+                  <span className="text-foreground">{conversationSourceLabel[conversation.source]}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Started</span>
+                  <span className="text-foreground">{formatTimestamp(conversation.startedAt)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Last message</span>
+                  <span className="text-foreground">{formatTimestamp(conversation.lastMessageAt)}</span>
+                </div>
+              </PanelBody>
+            </Panel>
+
+            <Panel className="min-w-0">
+              <PanelHeader>
+                <PanelTitle>Debug</PanelTitle>
+                <PanelDescription>Per-turn model, tokens, latency, and cost.</PanelDescription>
+              </PanelHeader>
+              <PanelBody className="grid gap-3">
+                {conversation.messages
+                  .filter((message) => message.role === 'ASSISTANT')
+                  .map((message) => (
+                    <div key={message.id} className="grid gap-1 rounded-md border border-border p-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Model</span>
+                        <span className="font-mono text-foreground">{message.model ?? '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Tokens</span>
+                        <span className="font-mono text-foreground">
+                          {message.promptTokens ?? 0} in / {message.completionTokens ?? 0} out
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Latency</span>
+                        <span className="font-mono text-foreground">
+                          {message.latencyMs !== null ? `${message.latencyMs}ms` : '—'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Est. cost</span>
+                        <span className="font-mono text-foreground">
+                          {message.estCostUsd !== null ? `$${message.estCostUsd.toFixed(4)}` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+              </PanelBody>
+            </Panel>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function BotDetailConversations() {
-  return <ConversationsScreen hideBotColumn />;
+function BotDetailConversations({ botId }: { botId: string }) {
+  return <ConversationsScreen lockedBotId={botId} />;
 }
 
 function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
@@ -3911,7 +3896,7 @@ function BotDetailScreen({
       {activeTab === 'playground' ? (
         <BotDetailPlayground bot={bot} onOpenModelProviders={onOpenModelProviders} />
       ) : null}
-      {activeTab === 'conversations' ? <BotDetailConversations /> : null}
+      {activeTab === 'conversations' ? <BotDetailConversations botId={bot.id} /> : null}
       {activeTab !== 'overview' &&
       activeTab !== 'configuration' &&
       activeTab !== 'knowledge' &&
