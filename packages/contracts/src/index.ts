@@ -371,6 +371,10 @@ export const conversationsListResponseSchema = z.object({
 
 export type ConversationsListResponse = z.infer<typeof conversationsListResponseSchema>;
 
+export const messageFeedbackSchema = z.enum(['up', 'down']);
+
+export type MessageFeedback = z.infer<typeof messageFeedbackSchema>;
+
 export const conversationMessageSchema = z.object({
   id: z.string(),
   role: messageRoleSchema,
@@ -382,9 +386,23 @@ export const conversationMessageSchema = z.object({
   latencyMs: z.number().min(0).nullable(),
   estCostUsd: z.number().min(0).nullable(),
   citations: z.array(chatCitationSourceSchema),
+  feedback: messageFeedbackSchema.nullable(),
 });
 
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
+
+export const setMessageFeedbackSchema = z.object({
+  feedback: messageFeedbackSchema.nullable(),
+});
+
+export type SetMessageFeedbackInput = z.infer<typeof setMessageFeedbackSchema>;
+
+export const messageFeedbackResponseSchema = z.object({
+  messageId: z.string(),
+  feedback: messageFeedbackSchema.nullable(),
+});
+
+export type MessageFeedbackResponse = z.infer<typeof messageFeedbackResponseSchema>;
 
 export const conversationDetailResponseSchema = z.object({
   id: z.string(),

@@ -9,6 +9,7 @@ function createPrismaMock() {
   return {
     organisationMember: { findUnique: vi.fn() },
     conversation: { findMany: vi.fn(), findFirst: vi.fn() },
+    message: { updateMany: vi.fn() },
   };
 }
 
@@ -187,6 +188,7 @@ describe('ConversationsService', () => {
             completionTokens: null,
             latencyMs: null,
             estCostUsd: null,
+            feedback: null,
             sources: [],
           },
           {
@@ -199,6 +201,7 @@ describe('ConversationsService', () => {
             completionTokens: 18,
             latencyMs: 640,
             estCostUsd: { toString: () => '0.0021' },
+            feedback: 'UP',
             sources: [{ label: 'Return Policy', location: 'Section 1', score: 0.92, knowledgeSourceId: 'src-1' }],
           },
         ],
@@ -219,8 +222,67 @@ describe('ConversationsService', () => {
         latencyMs: 640,
         estCostUsd: 0.0021,
         citations: [{ label: 'Return Policy', location: 'Section 1', score: 0.92, knowledgeSourceId: 'src-1' }],
+        feedback: 'up',
       });
       expect(result.messages[0]?.estCostUsd).toBeNull();
+      expect(result.messages[0]?.feedback).toBeNull();
+    });
+  });
+
+  describe('setMessageFeedback', () => {
+    it('blocks access when the user is not an organisation member', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.setMessageFeedback('org-1', 'user-1', 'conv-1', 'msg-1', 'up'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('throws NotFoundException when the conversation is outside the tenant scope', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.conversation.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.setMessageFeedback('org-1', 'user-1', 'conv-x', 'msg-1', 'up'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws NotFoundException when the message does not belong to the conversation', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.conversation.findFirst.mockResolvedValue({ id: 'conv-1' });
+      prisma.message.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.setMessageFeedback('org-1', 'user-1', 'conv-1', 'msg-x', 'up'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('persists up/down feedback as the stored enum', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.conversation.findFirst.mockResolvedValue({ id: 'conv-1' });
+      prisma.message.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.setMessageFeedback('org-1', 'user-1', 'conv-1', 'msg-2', 'down');
+
+      expect(prisma.message.updateMany).toHaveBeenCalledWith({
+        where: { id: 'msg-2', conversationId: 'conv-1', role: 'ASSISTANT' },
+        data: { feedback: 'DOWN' },
+      });
+      expect(result).toEqual({ messageId: 'msg-2', feedback: 'down' });
+    });
+
+    it('clears feedback when passed null', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.conversation.findFirst.mockResolvedValue({ id: 'conv-1' });
+      prisma.message.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await service.setMessageFeedback('org-1', 'user-1', 'conv-1', 'msg-2', null);
+
+      expect(prisma.message.updateMany).toHaveBeenCalledWith({
+        where: { id: 'msg-2', conversationId: 'conv-1', role: 'ASSISTANT' },
+        data: { feedback: null },
+      });
+      expect(result).toEqual({ messageId: 'msg-2', feedback: null });
     });
   });
 });

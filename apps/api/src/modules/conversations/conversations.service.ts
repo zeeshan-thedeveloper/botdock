@@ -3,9 +3,23 @@ import type {
   ConversationDetailResponse,
   ConversationsListResponse,
   ConversationUsageSummary,
+  MessageFeedback,
+  MessageFeedbackResponse,
 } from '@botdock/contracts';
 import { PrismaService } from '../database/prisma.service.js';
 import type { ListConversationsQueryDto } from './conversations.dto.js';
+
+function toStoredFeedback(feedback: MessageFeedback | null): 'UP' | 'DOWN' | null {
+  if (feedback === 'up') return 'UP';
+  if (feedback === 'down') return 'DOWN';
+  return null;
+}
+
+function toResponseFeedback(feedback: 'UP' | 'DOWN' | null): MessageFeedback | null {
+  if (feedback === 'UP') return 'up';
+  if (feedback === 'DOWN') return 'down';
+  return null;
+}
 
 const DEFAULT_LIST_LIMIT = 25;
 const PREVIEW_MAX_LENGTH = 160;
@@ -105,6 +119,7 @@ export class ConversationsService {
             completionTokens: true,
             latencyMs: true,
             estCostUsd: true,
+            feedback: true,
             sources: {
               select: { label: true, location: true, score: true, knowledgeSourceId: true },
             },
@@ -136,8 +151,39 @@ export class ConversationsService {
         latencyMs: message.latencyMs,
         estCostUsd: message.estCostUsd ? Number(message.estCostUsd) : null,
         citations: message.sources,
+        feedback: toResponseFeedback(message.feedback),
       })),
     };
+  }
+
+  async setMessageFeedback(
+    organisationId: string,
+    userId: string,
+    conversationId: string,
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ): Promise<MessageFeedbackResponse> {
+    await this.ensureOrganisationMember(organisationId, userId);
+
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { id: conversationId, organisationId },
+      select: { id: true },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation was not found.');
+    }
+
+    const result = await this.prisma.message.updateMany({
+      where: { id: messageId, conversationId, role: 'ASSISTANT' },
+      data: { feedback: toStoredFeedback(feedback) },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Message was not found in this conversation.');
+    }
+
+    return { messageId, feedback };
   }
 
   private buildPreview(content: string | undefined): string | null {

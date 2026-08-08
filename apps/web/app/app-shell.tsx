@@ -2685,6 +2685,7 @@ type PlaygroundMessageStatus = 'complete' | 'streaming' | 'error';
 
 type PlaygroundMessage = {
   id: string;
+  remoteId?: string;
   role: 'user' | 'assistant';
   content: string;
   status: PlaygroundMessageStatus;
@@ -2949,7 +2950,9 @@ function BotDetailPlayground({
           setConversationId(event.conversationId);
           setMessages((current) =>
             current.map((message) =>
-              message.id === assistantMessageId ? { ...message, status: 'complete' } : message,
+              message.id === assistantMessageId
+                ? { ...message, status: 'complete', remoteId: event.messageId }
+                : message,
             ),
           );
         } else if (event.type === 'error') {
@@ -3013,14 +3016,46 @@ function BotDetailPlayground({
     }
   }
 
-  function toggleFeedback(messageId: string, feedback: 'up' | 'down') {
+  async function toggleFeedback(messageId: string, feedback: 'up' | 'down') {
+    const target = messages.find((message) => message.id === messageId);
+    if (!target?.remoteId || !conversationId) {
+      // No persisted message/conversation yet (still streaming, or the turn
+      // errored before `done`) — nothing to attach feedback to server-side.
+      return;
+    }
+
+    const nextValue = target.feedback === feedback ? null : feedback;
+    const previousValue = target.feedback ?? null;
+
     setMessages((current) =>
-      current.map((message) =>
-        message.id === messageId
-          ? { ...message, feedback: message.feedback === feedback ? null : feedback }
-          : message,
-      ),
+      current.map((message) => (message.id === messageId ? { ...message, feedback: nextValue } : message)),
     );
+
+    try {
+      const response = await fetch(
+        new URL(
+          `/organisations/${workspaceOrganisationId}/conversations/${conversationId}/messages/${target.remoteId}/feedback`,
+          apiBaseUrl,
+        ),
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback: nextValue }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+    } catch {
+      // Roll back — the click visually failed rather than silently lying
+      // about what's actually persisted.
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId ? { ...message, feedback: previousValue } : message,
+        ),
+      );
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -3132,7 +3167,7 @@ function BotDetailPlayground({
                       isLast={message.id === lastAssistantMessageId}
                       onRetry={retryLastMessage}
                       onCopy={() => void copyMessage(message.content)}
-                      onFeedback={(feedback) => toggleFeedback(message.id, feedback)}
+                      onFeedback={(feedback) => void toggleFeedback(message.id, feedback)}
                     />
                   ))}
                 </div>
