@@ -67,7 +67,13 @@ Private planning lives in `.project/`, which is ignored by git.
 
 **Implemented and live-verified**: OAuth authentication, BYOK provider credentials, bot configuration (draft + publish), knowledge ingestion (text/file sources, chunking, embeddings, pgvector retrieval), the SSE chat runtime (authenticated playground + public widget), publishing and versioning, allowed-domains/embed snippet management, the embeddable widget and its SDK, and read-only conversation inspection.
 
-**Not yet implemented**: analytics/usage aggregation dashboards, billing, team/organisation membership management UI, conversation mutations (mark-for-review/archive/export), and a production hosting pipeline for the widget/demo-site/dashboard (only the API deploys to production today).
+**Not yet implemented**: analytics/usage aggregation dashboards, billing, team/organisation membership management UI, conversation mutations (mark-for-review/archive/export), and a production hosting pipeline for the embeddable widget itself (the API deploys to the droplet, `apps/web` deploys to Vercel — see below — but `apps/widget`/`apps/demo-site` don't deploy anywhere yet).
+
+## Production
+
+- API: `https://botdock-api.zeeshanahmed.app` — auto-deploys on a green CI run on `main` (`.github/workflows/deploy-api.yml`, `docker-compose.api.prod.yml`, DigitalOcean droplet).
+- Dashboard: `https://botdock.zeeshanahmed.app` — deploys to Vercel (connected via Vercel's project settings, not tracked as config in this repo).
+- Widget/demo-site: not deployed anywhere yet.
 
 ## Local Setup
 

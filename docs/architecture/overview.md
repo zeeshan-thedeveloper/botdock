@@ -31,9 +31,13 @@ Each runnable app has a Docker image:
 - `botdock/demo-site:local`: Nginx-served static external demo site.
 
 Local Compose (`docker-compose.yml`) also starts PostgreSQL with
-pgvector, Redis, and MinIO. Only the API deploys to production today
-(`docker-compose.api.prod.yml`, `.github/workflows/deploy-api.yml`) — the
-frontend apps don't have a production deploy pipeline yet.
+pgvector, Redis, and MinIO. The API deploys to the DigitalOcean droplet
+via `docker-compose.api.prod.yml` / `.github/workflows/deploy-api.yml`
+(auto-deploys on a green CI run on `main`). `apps/web` deploys separately
+to Vercel — that connection lives in Vercel's project settings, not
+tracked as config in this repo. `apps/widget`/`apps/demo-site` don't have
+a production deploy pipeline yet — see
+`docs/architecture/widget-integration.md`.
 
 ## Shared Packages
 

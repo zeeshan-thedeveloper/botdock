@@ -63,7 +63,8 @@ current version.
 **Not yet decided**: an actual production host for `widget.js` (a Caddy
 route on the API's domain reverse-proxying to a static host, a CDN, a
 dedicated deploy workflow analogous to `deploy-api.yml`). No such
-pipeline exists yet anywhere in this repo — only the API deploys to
-production today. This is treated as a real infrastructure decision
-(domain, cost, long-term maintenance) rather than something to guess at
-in code.
+pipeline exists yet in this repo — `apps/web` deploys to Vercel and
+`apps/api` deploys to the droplet, but `apps/widget`/`apps/demo-site`
+don't deploy anywhere yet. This is treated as a real infrastructure
+decision (domain, cost, long-term maintenance) rather than something to
+guess at in code.
