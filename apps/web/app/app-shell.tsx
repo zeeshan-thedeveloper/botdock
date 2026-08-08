@@ -3,11 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
+  allowedDomainSchema,
+  allowedDomainsResponseSchema,
   authSessionResponseSchema,
   botSchema,
   botsResponseSchema,
+  chatStreamEventSchema,
+  conversationDetailResponseSchema,
+  conversationsListResponseSchema,
+  deploymentInfoSchema,
+  knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
+  type AllowedDomain,
   type AuthSessionUser,
   type Bot as BotRecord,
   type BotBehaviorConfig,
@@ -15,12 +23,21 @@ import {
   type BotModelConfig,
   type BotResponseLength,
   type BotRetrievalMode,
+  type ChatCitationSource,
+  type ChatConversationSource,
+  type ChatStreamEvent,
+  type ConversationDetailResponse,
+  type ConversationSummary,
+  type DeploymentInfo,
+  type KnowledgeSource,
+  type KnowledgeSourceType,
   type ModelProvider,
   type ProviderCredential,
 } from '@botdock/contracts';
 import {
   Activity,
   AlertCircle,
+  Archive,
   ArrowLeft,
   BarChart3,
   Brain,
@@ -28,10 +45,12 @@ import {
   ChevronDown,
   CheckCircle2,
   Copy,
+  Download,
   EyeOff,
   ExternalLink,
   FileText,
   Filter,
+  Flag,
   Home,
   KeyRound,
   Loader2,
@@ -46,16 +65,23 @@ import {
   Rocket,
   Save,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Square,
   Sun,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   TriangleAlert,
+  Upload,
+  User,
 } from 'lucide-react';
 import {
   Badge,
   Button,
+  CodeBlock,
   DataTable,
   EmptyState,
   Field,
@@ -1117,6 +1143,7 @@ function BotDetailConfiguration({
   const [didLoadCredentials, setDidLoadCredentials] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const savedConfigRef = useRef(savedConfig);
   const activeBotIdRef = useRef(bot.id);
   const hasUnsavedChanges = !areBotConfigurationsEqual(config, savedConfig);
@@ -1260,13 +1287,13 @@ function BotDetailConfiguration({
     );
   }
 
-  async function saveConfiguration() {
+  async function saveConfiguration(): Promise<boolean> {
     if (!workspaceOrganisationId.trim()) {
       setSaveMessage({
         tone: 'warning',
         text: 'Bot configuration needs a configured workspace organisation id.',
       });
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -1319,13 +1346,58 @@ function BotDetailConfiguration({
       setSavedConfig(updatedConfig);
       setConfig(updatedConfig);
       setSaveMessage({ tone: 'success', text: 'Draft configuration saved.' });
+      return true;
     } catch (error) {
       setSaveMessage({
         tone: 'danger',
         text: error instanceof Error ? error.message : 'Could not save bot configuration.',
       });
+      return false;
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function publishBot() {
+    if (!workspaceOrganisationId.trim()) {
+      setSaveMessage({
+        tone: 'warning',
+        text: 'Bot configuration needs a configured workspace organisation id.',
+      });
+      return;
+    }
+
+    // Publish snapshots the bot's last-saved draft, not in-memory unsaved
+    // edits — save first so a click on "Publish changes" always publishes
+    // what's currently on screen, not stale data.
+    if (hasUnsavedChanges) {
+      const saved = await saveConfiguration();
+      if (!saved) return;
+    }
+
+    setIsPublishing(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}/publish`, apiBaseUrl),
+        { method: 'POST', credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const updatedBot = botSchema.parse(await response.json());
+      onBotUpdated(updatedBot);
+      setSaveMessage({ tone: 'success', text: 'Published. The live widget now serves this version.' });
+    } catch (error) {
+      setSaveMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not publish this bot.',
+      });
+    } finally {
+      setIsPublishing(false);
     }
   }
 
@@ -1745,9 +1817,14 @@ function BotDetailConfiguration({
               <Button
                 variant="secondary"
                 size="md"
-                disabled={!selectedCredential || isLoadingCredentials}
+                disabled={!selectedCredential || isLoadingCredentials || isSaving || isPublishing}
+                onClick={() => void publishBot()}
               >
-                <Rocket className="size-4" aria-hidden="true" />
+                {isPublishing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Rocket className="size-4" aria-hidden="true" />
+                )}
                 Publish changes
               </Button>
               <Button
@@ -1804,6 +1881,2286 @@ function BotDetailConfiguration({
             </Button>
           </div>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+const knowledgeSourceTypeLabel: Record<KnowledgeSourceType, string> = {
+  file: 'File',
+  text: 'Text',
+  faq: 'FAQ',
+};
+
+const knowledgeSourceStatusLabel: Record<KnowledgeSource['status'], string> = {
+  processing: 'Processing',
+  ready: 'Ready',
+  failed: 'Failed',
+};
+
+function knowledgeSourceStatusTone(status: KnowledgeSource['status']) {
+  if (status === 'ready') {
+    return 'success' as const;
+  }
+
+  if (status === 'failed') {
+    return 'danger' as const;
+  }
+
+  return 'primary' as const;
+}
+
+const knowledgeAllowedFileExtensions = ['.txt', '.md', '.csv', '.json', '.pdf'];
+const knowledgeMaxFileSizeBytes = 20 * 1024 * 1024;
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes}B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)}KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function getKnowledgeFileValidationError(file: File): string | null {
+  const name = file.name.toLowerCase();
+  const hasAllowedExtension = knowledgeAllowedFileExtensions.some((extension) =>
+    name.endsWith(extension),
+  );
+
+  if (!hasAllowedExtension) {
+    return 'Unsupported file type. Use PDF, TXT, Markdown, CSV, or JSON.';
+  }
+
+  if (file.size > knowledgeMaxFileSizeBytes) {
+    return 'File exceeds the 20MB upload limit.';
+  }
+
+  return null;
+}
+
+function BotDetailKnowledge({
+  bot,
+  onOpenModelProviders,
+}: {
+  bot: BotRow;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [sources, setSources] = useState<KnowledgeSource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [addContentType, setAddContentType] = useState<'text' | 'faq' | null>(null);
+  const [uploadQueueFiles, setUploadQueueFiles] = useState<File[] | null>(null);
+  const [isDropzoneActive, setIsDropzoneActive] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<KnowledgeSource | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const totalChunks = sources.reduce((sum, source) => sum + source.chunkCount, 0);
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+  const hasProcessingSources = sources.some((source) => source.status === 'processing');
+
+  const knowledgeUrl = useCallback(
+    (suffix = '') =>
+      new URL(
+        `/organisations/${workspaceOrganisationId}/bots/${bot.id}/knowledge${suffix}`,
+        apiBaseUrl,
+      ),
+    [apiBaseUrl, bot.id],
+  );
+
+  const loadSources = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setLoadError('Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load knowledge sources.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(knowledgeUrl(), { credentials: 'include' });
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const payload = knowledgeSourcesResponseSchema.parse(await response.json());
+      setSources(payload.sources);
+      setLoadError(null);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : 'Could not load knowledge sources.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [knowledgeUrl]);
+
+  useEffect(() => {
+    setIsLoading(true);
+    void loadSources();
+  }, [loadSources]);
+
+  useEffect(() => {
+    if (!hasProcessingSources) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => void loadSources(), 3000);
+    return () => window.clearInterval(intervalId);
+  }, [hasProcessingSources, loadSources]);
+
+  async function addTextOrFaqSource(input: { name: string; content: string }) {
+    const response = await fetch(knowledgeUrl(), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: addContentType, name: input.name, content: input.content }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+
+    await loadSources();
+  }
+
+  async function uploadOneFile(file: File) {
+    const formData = new FormData();
+    formData.append('type', 'file');
+    formData.append('name', file.name);
+    formData.append('file', file);
+
+    const response = await fetch(knowledgeUrl(), {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(await parseApiError(response));
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
+    const results = await Promise.allSettled(files.map((file) => uploadOneFile(file)));
+    const failureCount = results.filter((result) => result.status === 'rejected').length;
+
+    await loadSources();
+
+    if (failureCount > 0) {
+      throw new Error(
+        failureCount === files.length
+          ? 'Could not upload any of the selected files.'
+          : `${failureCount} of ${files.length} files failed to upload.`,
+      );
+    }
+  }
+
+  async function confirmDeleteSource() {
+    if (!pendingDelete) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(knowledgeUrl(`/${pendingDelete.id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok && response.status !== 204) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setSources((current) => current.filter((source) => source.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete this source.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <Panel>
+        <PanelHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <PanelTitle>Knowledge sources</PanelTitle>
+            <PanelDescription>
+              {sources.length} source{sources.length === 1 ? '' : 's'} · {totalChunks} chunks
+              indexed
+            </PanelDescription>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasActiveCredential}
+              onClick={() => setAddContentType('text')}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Add text
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasActiveCredential}
+              onClick={() => setAddContentType('faq')}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Add FAQ
+            </Button>
+            <Button size="sm" disabled={!hasActiveCredential} onClick={() => setUploadQueueFiles([])}>
+              <Upload className="size-4" aria-hidden="true" />
+              Upload files
+            </Button>
+          </div>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          {loadError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{loadError}</span>
+            </div>
+          ) : null}
+
+          {!hasActiveCredential ? (
+            <EmptyState
+              title="Connect a provider key to add knowledge"
+              description="Uploads and embeddings run on the workspace's own OpenAI key. Connect an active provider key for this bot before adding knowledge sources."
+              action={
+                <Button size="sm" onClick={onOpenModelProviders}>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  Connect provider key
+                </Button>
+              }
+            />
+          ) : (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setUploadQueueFiles([])}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setUploadQueueFiles([]);
+                }
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setIsDropzoneActive(true);
+              }}
+              onDragLeave={() => setIsDropzoneActive(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setIsDropzoneActive(false);
+                if (event.dataTransfer.files.length > 0) {
+                  setUploadQueueFiles(Array.from(event.dataTransfer.files));
+                }
+              }}
+              className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
+                isDropzoneActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+              }`}
+            >
+              <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+              <p className="mt-3 text-sm font-medium text-foreground">
+                Drag and drop files, or click to browse
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
+              </p>
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading knowledge sources...
+            </div>
+          ) : sources.length === 0 ? (
+            hasActiveCredential ? (
+              <EmptyState
+                title="No knowledge sources yet"
+                description="Upload a file or add text/FAQ content so this bot can answer from your knowledge base."
+              />
+            ) : null
+          ) : (
+            <>
+              <div className="-mx-4 -my-4 grid gap-3 p-4 md:hidden">
+                {sources.map((source) => (
+                  <div
+                    key={source.id}
+                    className="min-w-0 rounded-md border border-border bg-surface-raised p-4"
+                  >
+                    <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                      {source.name}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{knowledgeSourceTypeLabel[source.type]}</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span>{source.chunkCount} chunks</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span>{getRelativeTimestamp(source.updatedAt)}</span>
+                    </div>
+                    <StatusBadge
+                      status={knowledgeSourceStatusLabel[source.status]}
+                      tone={knowledgeSourceStatusTone(source.status)}
+                      className="mt-3"
+                    />
+                    {source.errorMessage ? (
+                      <p className="mt-2 break-words text-xs text-danger [overflow-wrap:anywhere]">
+                        {source.errorMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[38%] px-3 sm:px-4">Source</TableHead>
+                    <TableHead className="w-20 px-3 sm:px-4">Type</TableHead>
+                    <TableHead className="w-36 px-3 sm:px-4">Status</TableHead>
+                    <TableHead className="w-20 px-3 text-right sm:px-4">Chunks</TableHead>
+                    <TableHead className="w-28 px-3 sm:px-4">Updated</TableHead>
+                    <TableHead className="w-16 px-2 sm:px-3">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <tbody>
+                  {sources.map((source) => (
+                    <TableRow key={source.id}>
+                      <TableCell className="min-w-0 whitespace-normal px-3 sm:px-4">
+                        <p className="break-words font-medium text-foreground [overflow-wrap:anywhere]">
+                          {source.name}
+                        </p>
+                        {source.errorMessage ? (
+                          <p className="mt-1 break-words text-xs text-danger [overflow-wrap:anywhere]">
+                            {source.errorMessage}
+                          </p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 text-muted-foreground sm:px-4">
+                        {knowledgeSourceTypeLabel[source.type]}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 sm:px-4">
+                        <StatusBadge
+                          status={knowledgeSourceStatusLabel[source.status]}
+                          tone={knowledgeSourceStatusTone(source.status)}
+                        />
+                      </TableCell>
+                      <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
+                        {source.chunkCount}
+                      </TableCell>
+                      <TableCell className="whitespace-normal px-3 text-muted-foreground sm:px-4">
+                        {getRelativeTimestamp(source.updatedAt)}
+                      </TableCell>
+                      <TableCell className="px-2 sm:px-3">
+                        <div className="flex justify-end">
+                          <IconButton
+                            aria-label={`Delete ${source.name}`}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setDeleteError(null);
+                              setPendingDelete(source);
+                            }}
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </tbody>
+              </DataTable>
+            </>
+          )}
+
+          <p className="text-xs text-muted-foreground">
+            Website, Notion, Google Drive, and GitHub sources are coming soon.
+          </p>
+        </PanelBody>
+      </Panel>
+
+      {addContentType ? (
+        <AddKnowledgeContentModal
+          type={addContentType}
+          onClose={() => setAddContentType(null)}
+          onSave={addTextOrFaqSource}
+        />
+      ) : null}
+
+      {uploadQueueFiles ? (
+        <UploadKnowledgeFilesModal
+          initialFiles={uploadQueueFiles}
+          onClose={() => setUploadQueueFiles(null)}
+          onFilesQueued={uploadFiles}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <DeleteKnowledgeSourceModal
+          sourceName={pendingDelete.name}
+          isDeleting={isDeleting}
+          error={deleteError}
+          onCancel={() => {
+            if (!isDeleting) {
+              setPendingDelete(null);
+            }
+          }}
+          onConfirm={() => void confirmDeleteSource()}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+type QueuedKnowledgeFile = {
+  id: string;
+  file: File;
+  error: string | null;
+};
+
+function AddKnowledgeContentModal({
+  type,
+  onClose,
+  onSave,
+}: {
+  type: 'text' | 'faq';
+  onClose: () => void;
+  onSave: (input: { name: string; content: string }) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [content, setContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const isFaq = type === 'faq';
+  const canSave = name.trim().length > 0 && content.trim().length > 0;
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!canSave || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      await onSave({ name: name.trim(), content: content.trim() });
+      onClose();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error ? submitError.message : 'Could not save this knowledge source.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto">
+        <PanelHeader>
+          <PanelTitle>{isFaq ? 'Add FAQ' : 'Add text'}</PanelTitle>
+          <PanelDescription>
+            {isFaq
+              ? 'Add question-and-answer content this bot can cite directly.'
+              : 'Paste reference text this bot can search and cite from.'}
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody>
+          <form className="grid gap-4" onSubmit={(event) => void handleSubmit(event)}>
+            {error ? (
+              <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">{error}</span>
+              </div>
+            ) : null}
+            <Field label="Name">
+              <TextInput
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={isFaq ? 'Shipping FAQ' : 'Account & billing notes'}
+                autoFocus
+                disabled={isSaving}
+              />
+            </Field>
+            <Field
+              label={isFaq ? 'Questions and answers' : 'Content'}
+              hint={isFaq ? 'One question per line, followed by its answer.' : undefined}
+            >
+              <TextArea
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                placeholder={
+                  isFaq
+                    ? 'Q: How long does shipping take?\nA: Standard shipping takes 3-5 business days.'
+                    : 'Paste the reference text for this bot to answer from...'
+                }
+                className="min-h-40"
+                disabled={isSaving}
+              />
+            </Field>
+            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+              <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canSave || isSaving}>
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="size-4" aria-hidden="true" />
+                )}
+                {isFaq ? 'Add FAQ' : 'Add text'}
+              </Button>
+            </div>
+          </form>
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
+function UploadKnowledgeFilesModal({
+  initialFiles,
+  onClose,
+  onFilesQueued,
+}: {
+  initialFiles: File[];
+  onClose: () => void;
+  onFilesQueued: (files: File[]) => Promise<void>;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const [queue, setQueue] = useState<QueuedKnowledgeFile[]>(() => toQueuedFiles(initialFiles));
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const validFiles = queue.filter((item) => !item.error);
+  const hasInvalidFiles = queue.some((item) => item.error);
+
+  function toQueuedFiles(files: File[]): QueuedKnowledgeFile[] {
+    return files.map((file) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}`,
+      file,
+      error: getKnowledgeFileValidationError(file),
+    }));
+  }
+
+  function addFiles(files: FileList | File[]) {
+    setQueue((current) => {
+      const existingIds = new Set(current.map((item) => item.id));
+      const nextItems = toQueuedFiles(Array.from(files)).filter(
+        (item) => !existingIds.has(item.id),
+      );
+
+      return [...current, ...nextItems];
+    });
+  }
+
+  function removeFile(id: string) {
+    setQueue((current) => current.filter((item) => item.id !== id));
+  }
+
+  async function handleUpload() {
+    if (validFiles.length === 0 || isUploading) {
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      await onFilesQueued(validFiles.map((item) => item.file));
+      onClose();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Could not upload these files.');
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto">
+        <PanelHeader>
+          <PanelTitle>Upload files</PanelTitle>
+          <PanelDescription>
+            PDF, TXT, Markdown, CSV, or JSON · up to 20MB per file.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          {error ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{error}</span>
+            </div>
+          ) : null}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragActive(true);
+            }}
+            onDragLeave={() => setIsDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setIsDragActive(false);
+              if (event.dataTransfer.files.length > 0) {
+                addFiles(event.dataTransfer.files);
+              }
+            }}
+            className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
+              isDragActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+            }`}
+          >
+            <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-foreground">
+              Drag and drop files, or click to browse
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              PDF, TXT, Markdown, CSV, JSON · up to 20MB per file
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) {
+                  addFiles(event.target.files);
+                  event.target.value = '';
+                }
+              }}
+            />
+          </div>
+
+          {queue.length > 0 ? (
+            <div className="grid gap-2">
+              {queue.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-surface-raised px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {item.file.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {formatFileSize(item.file.size)}
+                      {item.error ? <span className="text-danger"> · {item.error}</span> : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusBadge
+                      status={item.error ? 'Failed' : 'Queued'}
+                      tone={item.error ? 'danger' : 'neutral'}
+                    />
+                    <IconButton
+                      aria-label={`Remove ${item.file.name}`}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeFile(item.id)}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </IconButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {hasInvalidFiles ? (
+            <p className="text-xs text-danger">Remove or replace invalid files before uploading.</p>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+            <Button variant="secondary" type="button" disabled={isUploading} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={validFiles.length === 0 || isUploading}
+              onClick={() => void handleUpload()}
+            >
+              {isUploading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="size-4" aria-hidden="true" />
+              )}
+              Upload {validFiles.length > 0 ? validFiles.length : ''} file
+              {validFiles.length === 1 ? '' : 's'}
+            </Button>
+          </div>
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
+function DeleteKnowledgeSourceModal({
+  sourceName,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  sourceName: string;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-knowledge-source-title"
+        className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+            <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="delete-knowledge-source-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Delete &ldquo;{sourceName}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              This removes the source, its stored file, and every indexed chunk. This cannot be
+              undone.
+            </p>
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">
+                {error}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isDeleting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="md" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="size-4" aria-hidden="true" />
+            )}
+            Delete source
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PlaygroundMessageStatus = 'complete' | 'streaming' | 'error';
+
+type PlaygroundMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: PlaygroundMessageStatus;
+  citations?: ChatCitationSource[];
+  errorMessage?: string;
+  feedback?: 'up' | 'down' | null;
+};
+
+type PlaygroundTrace = {
+  requestId?: string;
+  model?: string;
+  contextTokens?: number;
+  retrievedChunks?: { label: string; score: number }[];
+  promptPreview?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  latencyMs?: number;
+  estCostUsd?: number;
+};
+
+const playgroundStarterPrompts = ['What can you help me with?', "What's your return policy?"];
+
+async function consumePlaygroundEventStream(
+  response: Response,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  if (!response.body) {
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const rawEvents = buffer.split('\n\n');
+    buffer = rawEvents.pop() ?? '';
+
+    for (const rawEvent of rawEvents) {
+      const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data:'));
+      if (!dataLine) continue;
+
+      const data = dataLine.slice(5).trim();
+      if (!data) continue;
+
+      const parsed = chatStreamEventSchema.safeParse(JSON.parse(data));
+      if (parsed.success) {
+        onEvent(parsed.data);
+      }
+    }
+  }
+}
+
+function TraceRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string | number | undefined;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span
+        className={`min-w-0 flex-1 truncate text-right text-foreground ${mono ? 'font-mono' : ''}`}
+        title={value !== undefined ? String(value) : undefined}
+      >
+        {value ?? '—'}
+      </span>
+    </div>
+  );
+}
+
+function PlaygroundMessageBubble({
+  message,
+  isLast,
+  onRetry,
+  onCopy,
+  onFeedback,
+}: {
+  message: PlaygroundMessage;
+  isLast: boolean;
+  onRetry: () => void;
+  onCopy: () => void;
+  onFeedback: (feedback: 'up' | 'down') => void;
+}) {
+  if (message.role === 'user') {
+    return (
+      <div className="max-w-[65%] self-end whitespace-pre-wrap break-words rounded-xl rounded-br-sm bg-primary px-3.5 py-2.5 text-sm text-primary-foreground [overflow-wrap:anywhere]">
+        {message.content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-[75%] min-w-0 self-start whitespace-pre-wrap break-words rounded-xl rounded-bl-sm border border-border bg-surface-raised px-3.5 py-2.5 text-sm [overflow-wrap:anywhere]">
+      {message.content}
+      {message.status === 'streaming' ? (
+        <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-muted-foreground align-middle" />
+      ) : null}
+      {message.status === 'error' ? <p className="mt-2 text-xs text-danger">{message.errorMessage}</p> : null}
+      {message.citations && message.citations.length > 0 ? (
+        <div className="mt-2 border-t border-border pt-2 text-[11.5px] text-muted-foreground">
+          Source:{' '}
+          {message.citations
+            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+            .join(' · ')}
+        </div>
+      ) : null}
+      {message.status !== 'streaming' ? (
+        <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+          {isLast ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 transition hover:text-foreground"
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+              Retry
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onCopy}
+            className="inline-flex items-center gap-1 transition hover:text-foreground"
+          >
+            <Copy className="size-3" aria-hidden="true" />
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => onFeedback('up')}
+            aria-label="Good response"
+            className={`transition hover:text-foreground ${message.feedback === 'up' ? 'text-success' : ''}`}
+          >
+            <ThumbsUp className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onFeedback('down')}
+            aria-label="Bad response"
+            className={`transition hover:text-foreground ${message.feedback === 'down' ? 'text-danger' : ''}`}
+          >
+            <ThumbsDown className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BotDetailPlayground({
+  bot,
+  onOpenModelProviders,
+}: {
+  bot: BotRow;
+  onOpenModelProviders: () => void;
+}) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [trace, setTrace] = useState<PlaygroundTrace | null>(null);
+  const [isTraceCollapsed, setIsTraceCollapsed] = useState(false);
+  const [streamError, setStreamError] = useState<{ code: string; message: string } | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+
+  useEffect(() => {
+    messageListRef.current?.scrollTo({ top: messageListRef.current.scrollHeight });
+  }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  async function sendMessage(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || isStreaming || !hasActiveCredential) {
+      return;
+    }
+
+    setStreamError(null);
+    setTrace(null);
+    setInput('');
+
+    const userMessageId = `user-${Date.now()}`;
+    const assistantMessageId = `assistant-${Date.now()}`;
+
+    setMessages((current) => [
+      ...current,
+      { id: userMessageId, role: 'user', content: trimmed, status: 'complete' },
+      { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' },
+    ]);
+    setIsStreaming(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(
+        new URL(
+          `/organisations/${workspaceOrganisationId}/bots/${bot.id}/playground/messages`,
+          apiBaseUrl,
+        ),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId, message: trimmed }),
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      await consumePlaygroundEventStream(response, (event) => {
+        if (event.type === 'token') {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, content: message.content + event.delta }
+                : message,
+            ),
+          );
+        } else if (event.type === 'citation') {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, citations: event.sources } : message,
+            ),
+          );
+        } else if (event.type === 'trace') {
+          setTrace((current) => ({
+            ...current,
+            requestId: event.requestId,
+            model: event.model,
+            contextTokens: event.contextTokens,
+            retrievedChunks: event.retrievedChunks,
+            promptPreview: event.promptPreview,
+          }));
+        } else if (event.type === 'usage') {
+          setTrace((current) => ({
+            ...current,
+            promptTokens: event.promptTokens,
+            completionTokens: event.completionTokens,
+            latencyMs: event.latencyMs,
+            estCostUsd: event.estCostUsd,
+          }));
+        } else if (event.type === 'done') {
+          setConversationId(event.conversationId);
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId ? { ...message, status: 'complete' } : message,
+            ),
+          );
+        } else if (event.type === 'error') {
+          setStreamError({ code: event.code, message: event.message });
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessageId
+                ? { ...message, status: 'error', errorMessage: event.message }
+                : message,
+            ),
+          );
+        }
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId ? { ...message, status: 'complete' } : message,
+          ),
+        );
+      } else {
+        const message = error instanceof Error ? error.message : 'Could not reach the playground.';
+        setStreamError({ code: 'network_error', message });
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === assistantMessageId ? { ...item, status: 'error', errorMessage: message } : item,
+          ),
+        );
+      }
+    } finally {
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    }
+  }
+
+  function stopStreaming() {
+    abortControllerRef.current?.abort();
+  }
+
+  function clearConversation() {
+    abortControllerRef.current?.abort();
+    setMessages([]);
+    setConversationId(undefined);
+    setTrace(null);
+    setStreamError(null);
+    setIsStreaming(false);
+  }
+
+  function retryLastMessage() {
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+    if (lastUserMessage) {
+      void sendMessage(lastUserMessage.content);
+    }
+  }
+
+  async function copyMessage(content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch {
+      // Clipboard access denied — nothing actionable to surface here.
+    }
+  }
+
+  function toggleFeedback(messageId: string, feedback: 'up' | 'down') {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? { ...message, feedback: message.feedback === feedback ? null : feedback }
+          : message,
+      ),
+    );
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendMessage(input);
+  }
+
+  const lastAssistantMessageId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
+
+  return (
+    <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_1fr_280px]">
+      <Panel className="flex flex-col gap-4 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        <p className="text-sm font-semibold text-foreground">Playground</p>
+        <div className="grid gap-3 text-xs">
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Bot</p>
+            <p className="truncate rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.name}
+            </p>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Version</p>
+            <p className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              Draft (unpublished)
+            </p>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Model</p>
+            <p className="truncate rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.modelConfig.model}
+            </p>
+          </div>
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-muted-foreground">
+              <span>Temperature</span>
+              <span>{bot.modelConfig.temperature.toFixed(2)}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${bot.modelConfig.temperature * 100}%` }}
+              />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-muted-foreground">Knowledge mode</p>
+            <p className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-foreground">
+              {bot.behaviorConfig.strictKnowledge
+                ? 'Strict (sources only)'
+                : 'Open (model knowledge allowed)'}
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="flex min-w-0 flex-col lg:h-[calc(100vh-220px)]">
+        <PanelHeader className="flex flex-row items-center justify-between py-3">
+          <PanelTitle className="text-sm">Chat preview</PanelTitle>
+          <button
+            type="button"
+            onClick={clearConversation}
+            disabled={messages.length === 0}
+            className="text-xs text-muted-foreground transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Clear conversation
+          </button>
+        </PanelHeader>
+
+        {!hasActiveCredential ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              title="Connect a provider key to use the playground"
+              description="This bot has no active provider credential. Connect one to start chatting."
+              action={
+                <Button size="sm" onClick={onOpenModelProviders}>
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  Connect provider key
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div ref={messageListRef} className="flex-1 overflow-y-auto p-4">
+              {messages.length === 0 ? (
+                <div className="grid gap-4">
+                  <div className="max-w-[70%] rounded-xl rounded-bl-sm border border-border bg-surface-raised px-3.5 py-2.5 text-sm">
+                    {bot.behaviorConfig.welcomeMessage}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {playgroundStarterPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setInput(prompt)}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3.5">
+                  {messages.map((message) => (
+                    <PlaygroundMessageBubble
+                      key={message.id}
+                      message={message}
+                      isLast={message.id === lastAssistantMessageId}
+                      onRetry={retryLastMessage}
+                      onCopy={() => void copyMessage(message.content)}
+                      onFeedback={(feedback) => toggleFeedback(message.id, feedback)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {streamError ? (
+              <div className="mx-4 mb-3 flex items-start gap-2 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-xs text-danger">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">
+                  {streamError.code === 'no_provider_key' ? (
+                    <>
+                      {streamError.message}{' '}
+                      <button type="button" onClick={onOpenModelProviders} className="underline">
+                        Connect a key
+                      </button>
+                      .
+                    </>
+                  ) : (
+                    streamError.message
+                  )}
+                </span>
+              </div>
+            ) : null}
+
+            <form onSubmit={handleSubmit} className="flex gap-2 border-t border-border p-3.5">
+              <TextInput
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder="Type a message..."
+                disabled={isStreaming}
+                className="flex-1"
+              />
+              {isStreaming ? (
+                <Button type="button" variant="secondary" onClick={stopStreaming}>
+                  <Square className="size-4" aria-hidden="true" />
+                  Stop
+                </Button>
+              ) : (
+                <Button type="submit" disabled={!input.trim()}>
+                  <Send className="size-4" aria-hidden="true" />
+                  Send
+                </Button>
+              )}
+            </form>
+          </>
+        )}
+      </Panel>
+
+      <Panel className="flex flex-col gap-3.5 p-4 lg:h-[calc(100vh-220px)] lg:overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">Debug trace</p>
+          <button
+            type="button"
+            onClick={() => setIsTraceCollapsed((current) => !current)}
+            className="text-xs text-muted-foreground transition hover:text-foreground"
+          >
+            {isTraceCollapsed ? 'Expand ›' : 'Collapse ›'}
+          </button>
+        </div>
+
+        {isTraceCollapsed ? null : trace ? (
+          <>
+            <div className="grid gap-2 text-xs">
+              <TraceRow label="Request ID" value={trace.requestId} mono />
+              <TraceRow label="Model" value={trace.model} />
+              <TraceRow
+                label="Latency"
+                value={trace.latencyMs !== undefined ? `${trace.latencyMs}ms` : undefined}
+              />
+              <TraceRow label="Input tokens" value={trace.promptTokens ?? trace.contextTokens} />
+              <TraceRow label="Output tokens" value={trace.completionTokens} />
+              <TraceRow
+                label="Est. cost"
+                value={trace.estCostUsd !== undefined ? `$${trace.estCostUsd.toFixed(4)}` : undefined}
+              />
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <p className="mb-2 text-xs text-muted-foreground">Retrieved chunks</p>
+              {trace.retrievedChunks && trace.retrievedChunks.length > 0 ? (
+                <div className="grid gap-1.5">
+                  {trace.retrievedChunks.map((chunk, index) => (
+                    <div
+                      key={`${chunk.label}-${index}`}
+                      className="rounded-md border border-border bg-surface-raised px-2.5 py-2 text-[11.5px]"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-muted-foreground">
+                        <span className="min-w-0 truncate">{chunk.label}</span>
+                        <span className="shrink-0 font-mono text-cyan-300">{chunk.score.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11.5px] text-muted-foreground">No chunks retrieved for this turn.</p>
+              )}
+            </div>
+
+            {trace.promptPreview ? (
+              <div className="border-t border-border pt-3">
+                <p className="mb-2 text-xs text-muted-foreground">Prompt preview</p>
+                <pre className="whitespace-pre-wrap break-words rounded-md border border-border bg-surface-raised p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+                  {trace.promptPreview}
+                </pre>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">Send a message to see the trace for that turn.</p>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+// CONV-002: wired to the real GET /organisations/:orgId/conversations
+// (list, cursor-paginated) and .../conversations/:id (detail) endpoints
+// from CONV-001. UI-016 previously backed this with mock data that
+// included a `status` taxonomy (Active/Needs review/Completed/...) with no
+// real equivalent — CONV-001's data model has no status field, and
+// fabricating one for real conversations would be actively misleading to
+// someone debugging their bot. Dropped in favor of showing the one honest
+// signal that IS derivable from real data: an assistant message with empty
+// content (ChatService still persists a Message row when the provider call
+// fails mid-stream, just with no tokens and no UsageRecord) renders as
+// "No response was generated" in the transcript.
+const conversationSourceLabel: Record<ChatConversationSource, string> = {
+  WIDGET: 'Widget',
+  PLAYGROUND: 'Playground',
+  API: 'API',
+};
+
+function ConversationRowCard({
+  conversation,
+  onOpen,
+  hideBotName = false,
+}: {
+  conversation: ConversationSummary;
+  onOpen: (id: string) => void;
+  hideBotName?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(conversation.id)}
+      className="grid min-w-0 gap-2 border-b border-border p-4 text-left transition last:border-b-0 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+    >
+      {hideBotName ? null : (
+        <p className="min-w-0 flex-1 break-words font-medium text-foreground [overflow-wrap:anywhere]">
+          {conversation.botName}
+        </p>
+      )}
+      <p className="break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
+        {conversation.lastMessagePreview ?? 'No messages yet.'}
+      </p>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>{conversationSourceLabel[conversation.source]}</span>
+        <span className="text-muted-foreground/50">·</span>
+        <span>{conversation.messageCount} messages</span>
+        <span className="text-muted-foreground/50">·</span>
+        <span>{formatTimestamp(conversation.lastMessageAt)}</span>
+      </div>
+    </button>
+  );
+}
+
+function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const hideBotColumn = Boolean(lockedBotId);
+
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'All' | ChatConversationSource>('All');
+
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationDetailResponse | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const sourceFilters: Array<'All' | ChatConversationSource> = ['All', 'WIDGET', 'PLAYGROUND', 'API'];
+
+  // Debounced so search-as-you-type doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const buildListUrl = useCallback(
+    (cursor?: string) => {
+      const params = new URLSearchParams();
+      if (lockedBotId) params.set('botId', lockedBotId);
+      if (sourceFilter !== 'All') params.set('source', sourceFilter);
+      if (search) params.set('search', search);
+      if (cursor) params.set('cursor', cursor);
+      const url = new URL(`/organisations/${workspaceOrganisationId}/conversations`, apiBaseUrl);
+      url.search = params.toString();
+      return url;
+    },
+    [apiBaseUrl, lockedBotId, sourceFilter, search],
+  );
+
+  const loadFirstPage = useCallback(async () => {
+    if (!workspaceOrganisationId.trim()) {
+      setLoadError('Set NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID to load conversations.');
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const response = await fetch(buildListUrl(), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      const payload = conversationsListResponseSchema.parse(await response.json());
+      setConversations(payload.conversations);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not load conversations.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildListUrl]);
+
+  useEffect(() => {
+    void loadFirstPage();
+  }, [loadFirstPage]);
+
+  async function handleLoadMore() {
+    if (!nextCursor) return;
+    setIsLoadingMore(true);
+    try {
+      const response = await fetch(buildListUrl(nextCursor), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      const payload = conversationsListResponseSchema.parse(await response.json());
+      setConversations((current) => [...current, ...payload.conversations]);
+      setNextCursor(payload.nextCursor);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not load more conversations.');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
+
+  async function openConversation(id: string) {
+    setSelectedConversationId(id);
+    setSelectedConversation(null);
+    setDetailError(null);
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/conversations/${id}`, apiBaseUrl),
+        { credentials: 'include' },
+      );
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setSelectedConversation(conversationDetailResponseSchema.parse(await response.json()));
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : 'Could not load this conversation.');
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
+  function closeConversation() {
+    setSelectedConversationId(null);
+    setSelectedConversation(null);
+    setDetailError(null);
+  }
+
+  if (selectedConversationId) {
+    return (
+      <ConversationDetailView
+        conversation={selectedConversation}
+        isLoading={isDetailLoading}
+        error={detailError}
+        onBack={closeConversation}
+      />
+    );
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4 overflow-hidden">
+      <Panel className="min-w-0 overflow-hidden">
+        <PanelHeader>
+          <PanelTitle>Conversations</PanelTitle>
+          <PanelDescription>
+            Inspect what your bots have been saying to visitors. Playground traffic is excluded by
+            default.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <div className="grid gap-3">
+            <div className="relative min-w-0">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <TextInput
+                aria-label="Search conversations"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Search by visitor or message content..."
+                className="pl-9"
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-surface-raised px-3 py-2 text-xs font-medium text-muted-foreground">
+                <Filter className="size-3.5" aria-hidden="true" />
+                Source
+              </div>
+              {sourceFilters.map((filter) => (
+                <Button
+                  key={filter}
+                  variant={sourceFilter === filter ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => setSourceFilter(filter)}
+                  aria-pressed={sourceFilter === filter}
+                >
+                  {filter === 'All' ? 'All' : conversationSourceLabel[filter]}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {loadError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{loadError}</span>
+            </div>
+          ) : null}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading conversations...
+            </div>
+          ) : conversations.length === 0 ? (
+            <EmptyState
+              title="No conversations found"
+              description="Try a different filter or search term."
+            />
+          ) : (
+            <>
+              <div className="overflow-hidden rounded-lg border border-border md:hidden">
+                {conversations.map((conversation) => (
+                  <ConversationRowCard
+                    key={conversation.id}
+                    conversation={conversation}
+                    onOpen={openConversation}
+                    hideBotName={hideBotColumn}
+                  />
+                ))}
+              </div>
+
+              <DataTable className="w-full table-fixed" wrapperClassName="hidden md:block">
+                <TableHeader>
+                  <TableRow>
+                    {hideBotColumn ? null : <TableHead className="w-[26%] px-3 sm:px-4">Bot</TableHead>}
+                    <TableHead className={hideBotColumn ? 'w-[48%] px-3 sm:px-4' : 'w-[34%] px-3 sm:px-4'}>
+                      Last message
+                    </TableHead>
+                    <TableHead className="w-24 px-3 sm:px-4">Source</TableHead>
+                    <TableHead className="w-16 px-3 sm:px-4">Msgs</TableHead>
+                    <TableHead className="w-32 px-3 sm:px-4">Last activity</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <tbody>
+                  {conversations.map((conversation) => (
+                    <TableRow
+                      key={conversation.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openConversation(conversation.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openConversation(conversation.id);
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      {hideBotColumn ? null : (
+                        <TableCell className="min-w-0 truncate font-medium text-foreground">
+                          {conversation.botName}
+                        </TableCell>
+                      )}
+                      <TableCell className="min-w-0 truncate text-muted-foreground">
+                        {conversation.lastMessagePreview ?? 'No messages yet.'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {conversationSourceLabel[conversation.source]}
+                      </TableCell>
+                      <TableCell className="font-mono text-muted-foreground">
+                        {conversation.messageCount}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatTimestamp(conversation.lastMessageAt)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </tbody>
+              </DataTable>
+
+              {nextCursor ? (
+                <div className="flex justify-center pt-1">
+                  <Button variant="secondary" size="sm" onClick={() => void handleLoadMore()} disabled={isLoadingMore}>
+                    {isLoadingMore ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+                    Load more
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </PanelBody>
+      </Panel>
+    </div>
+  );
+}
+
+function ConversationDetailView({
+  conversation,
+  isLoading,
+  error,
+  onBack,
+}: {
+  conversation: ConversationDetailResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  onBack: () => void;
+}) {
+  return (
+    <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 gap-4 border-b border-border pb-4">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex max-w-full items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          <span className="shrink-0">Conversations</span>
+          {conversation ? (
+            <>
+              <span className="text-muted-foreground/60">/</span>
+              <span className="min-w-0 truncate text-foreground">{conversation.botName}</span>
+            </>
+          ) : null}
+        </button>
+
+        {conversation ? (
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-foreground">{conversation.botName}</h1>
+              <Badge tone="neutral">{conversationSourceLabel[conversation.source]}</Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
+              >
+                <Flag className="size-4" aria-hidden="true" />
+                Mark for review
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
+              >
+                <Archive className="size-4" aria-hidden="true" />
+                Archive
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled
+                title="Not available yet — read-only inspection for now."
+              >
+                <Download className="size-4" aria-hidden="true" />
+                Export
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{error}</span>
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Loading conversation...
+        </div>
+      ) : conversation ? (
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[1fr_320px]">
+          <Panel className="min-w-0">
+            <PanelHeader>
+              <PanelTitle>Transcript</PanelTitle>
+              <PanelDescription>{conversation.messages.length} messages</PanelDescription>
+            </PanelHeader>
+            <PanelBody className="grid min-w-0 gap-3">
+              {conversation.messages.map((message) => {
+                const isEmptyAssistantReply = message.role === 'ASSISTANT' && message.content.trim().length === 0;
+
+                return (
+                  <div
+                    key={message.id}
+                    className={`flex min-w-0 flex-col gap-1 ${message.role === 'USER' ? 'items-end' : 'items-start'}`}
+                  >
+                    <div
+                      className={`max-w-[85%] min-w-0 whitespace-pre-wrap break-words rounded-xl px-3.5 py-2.5 text-sm [overflow-wrap:anywhere] ${
+                        message.role === 'USER'
+                          ? 'rounded-br-sm bg-primary text-primary-foreground'
+                          : isEmptyAssistantReply
+                            ? 'rounded-bl-sm border border-danger/40 bg-danger-muted text-danger'
+                            : 'rounded-bl-sm border border-border bg-surface-raised text-foreground'
+                      }`}
+                    >
+                      {isEmptyAssistantReply ? (
+                        <span className="italic">No response was generated for this turn.</span>
+                      ) : (
+                        message.content
+                      )}
+                      {message.citations.length > 0 ? (
+                        <div className="mt-2 border-t border-border/60 pt-2 text-[11.5px] opacity-80">
+                          Source:{' '}
+                          {message.citations
+                            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+                            .join(' · ')}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className="px-1 text-[11px] text-muted-foreground">
+                      {formatTimestamp(message.createdAt)}
+                    </span>
+                  </div>
+                );
+              })}
+            </PanelBody>
+          </Panel>
+
+          <div className="grid min-w-0 gap-4">
+            <Panel className="min-w-0">
+              <PanelHeader>
+                <PanelTitle>Context</PanelTitle>
+              </PanelHeader>
+              <PanelBody className="grid gap-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <User className="size-3.5" aria-hidden="true" />
+                    Visitor
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                    {conversation.visitorId ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Source</span>
+                  <span className="text-foreground">{conversationSourceLabel[conversation.source]}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Started</span>
+                  <span className="text-foreground">{formatTimestamp(conversation.startedAt)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Last message</span>
+                  <span className="text-foreground">{formatTimestamp(conversation.lastMessageAt)}</span>
+                </div>
+              </PanelBody>
+            </Panel>
+
+            <Panel className="min-w-0">
+              <PanelHeader>
+                <PanelTitle>Debug</PanelTitle>
+                <PanelDescription>Per-turn model, tokens, latency, and cost.</PanelDescription>
+              </PanelHeader>
+              <PanelBody className="grid gap-3">
+                {conversation.messages
+                  .filter((message) => message.role === 'ASSISTANT')
+                  .map((message) => (
+                    <div key={message.id} className="grid gap-1 rounded-md border border-border p-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Model</span>
+                        <span className="font-mono text-foreground">{message.model ?? '—'}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Tokens</span>
+                        <span className="font-mono text-foreground">
+                          {message.promptTokens ?? 0} in / {message.completionTokens ?? 0} out
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Latency</span>
+                        <span className="font-mono text-foreground">
+                          {message.latencyMs !== null ? `${message.latencyMs}ms` : '—'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-muted-foreground">Est. cost</span>
+                        <span className="font-mono text-foreground">
+                          {message.estCostUsd !== null ? `$${message.estCostUsd.toFixed(4)}` : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+              </PanelBody>
+            </Panel>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BotDetailConversations({ botId }: { botId: string }) {
+  return <ConversationsScreen lockedBotId={botId} />;
+}
+
+function AllowedDomainRow({
+  domain,
+  onDelete,
+}: {
+  domain: AllowedDomain;
+  onDelete: (domain: AllowedDomain) => void;
+}) {
+  return (
+    <TableRow>
+      <TableCell className="min-w-0 truncate font-mono text-foreground">{domain.pattern}</TableCell>
+      <TableCell className="text-muted-foreground">{formatTimestamp(domain.createdAt)}</TableCell>
+      <TableCell className="text-right">
+        <IconButton
+          aria-label={`Remove ${domain.pattern}`}
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(domain)}
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </IconButton>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function DeleteAllowedDomainModal({
+  pattern,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  pattern: string;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-allowed-domain-title"
+        className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+            <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="delete-allowed-domain-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Remove &ldquo;{pattern}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              The widget will stop responding to requests from this domain immediately.
+            </p>
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isDeleting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="md" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="size-4" aria-hidden="true" />
+            )}
+            Remove domain
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotDetailDeployments({ bot }: { bot: BotRow }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const buildUrl = useCallback(
+    (suffix = '') => new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}${suffix}`, apiBaseUrl),
+    [apiBaseUrl, bot.id],
+  );
+
+  const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [isLoadingDeployment, setIsLoadingDeployment] = useState(true);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [domains, setDomains] = useState<AllowedDomain[]>([]);
+  const [isLoadingDomains, setIsLoadingDomains] = useState(true);
+  const [domainsError, setDomainsError] = useState<string | null>(null);
+  const [newPattern, setNewPattern] = useState('');
+  const [isAddingDomain, setIsAddingDomain] = useState(false);
+  const [addDomainError, setAddDomainError] = useState<string | null>(null);
+  const [domainPendingDelete, setDomainPendingDelete] = useState<AllowedDomain | null>(null);
+  const [isDeletingDomain, setIsDeletingDomain] = useState(false);
+  const [deleteDomainError, setDeleteDomainError] = useState<string | null>(null);
+
+  const loadDeployment = useCallback(async () => {
+    setIsLoadingDeployment(true);
+    setDeploymentError(null);
+    try {
+      const response = await fetch(buildUrl('/deployment'), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDeployment(deploymentInfoSchema.parse(await response.json()));
+    } catch (error) {
+      setDeploymentError(error instanceof Error ? error.message : 'Could not load deployment status.');
+    } finally {
+      setIsLoadingDeployment(false);
+    }
+  }, [buildUrl]);
+
+  const loadDomains = useCallback(async () => {
+    setIsLoadingDomains(true);
+    setDomainsError(null);
+    try {
+      const response = await fetch(buildUrl('/allowed-domains'), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDomains(allowedDomainsResponseSchema.parse(await response.json()).domains);
+    } catch (error) {
+      setDomainsError(error instanceof Error ? error.message : 'Could not load allowed domains.');
+    } finally {
+      setIsLoadingDomains(false);
+    }
+  }, [buildUrl]);
+
+  useEffect(() => {
+    // bot.status is in the dependency list (unused directly) so a publish
+    // triggered elsewhere (the header/config-sidebar Publish actions, which
+    // don't remount this component) still refetches deployment info here —
+    // loadDeployment's own identity doesn't change just because the bot's
+    // status did.
+    void loadDeployment();
+  }, [loadDeployment, bot.status]);
+
+  useEffect(() => {
+    void loadDomains();
+  }, [loadDomains]);
+
+  async function handleAddDomain(event: FormEvent) {
+    event.preventDefault();
+    const pattern = newPattern.trim();
+    if (!pattern) return;
+
+    setIsAddingDomain(true);
+    setAddDomainError(null);
+    try {
+      const response = await fetch(buildUrl('/allowed-domains'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern }),
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      const created = allowedDomainSchema.parse(await response.json());
+      setDomains((current) => [created, ...current.filter((domain) => domain.id !== created.id)]);
+      setNewPattern('');
+    } catch (error) {
+      setAddDomainError(error instanceof Error ? error.message : 'Could not add this domain.');
+    } finally {
+      setIsAddingDomain(false);
+    }
+  }
+
+  async function handleDeleteDomain() {
+    if (!domainPendingDelete) return;
+
+    setIsDeletingDomain(true);
+    setDeleteDomainError(null);
+    try {
+      const response = await fetch(buildUrl(`/allowed-domains/${domainPendingDelete.id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDomains((current) => current.filter((domain) => domain.id !== domainPendingDelete.id));
+      setDomainPendingDelete(null);
+    } catch (error) {
+      setDeleteDomainError(error instanceof Error ? error.message : 'Could not remove this domain.');
+    } finally {
+      setIsDeletingDomain(false);
+    }
+  }
+
+  async function copySnippet() {
+    if (!deployment?.embedSnippet) return;
+    try {
+      await navigator.clipboard.writeText(deployment.embedSnippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard permission can be denied; the snippet is still selectable text in the CodeBlock below.
+    }
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4">
+      <Panel className="min-w-0">
+        <PanelHeader>
+          <PanelTitle>Production deployment</PanelTitle>
+          <PanelDescription>Where this bot is actually live for visitors.</PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          {deploymentError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{deploymentError}</span>
+            </div>
+          ) : null}
+
+          {isLoadingDeployment ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading deployment status...
+            </div>
+          ) : deployment ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                {deployment.status === 'active' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-muted px-2.5 py-1 text-xs font-medium text-success">
+                    <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                    Active
+                  </span>
+                ) : deployment.status === 'disabled' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    <Square className="size-3.5" aria-hidden="true" />
+                    Disabled
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    <AlertCircle className="size-3.5" aria-hidden="true" />
+                    Not published yet
+                  </span>
+                )}
+                {deployment.currentVersionNumber !== null ? (
+                  <span className="text-sm text-muted-foreground">Version {deployment.currentVersionNumber}</span>
+                ) : null}
+                {deployment.publishedAt ? (
+                  <span className="text-sm text-muted-foreground">
+                    · Published {formatTimestamp(deployment.publishedAt)}
+                  </span>
+                ) : null}
+              </div>
+
+              {deployment.embedSnippet ? (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">Embed snippet</p>
+                    <Button variant="secondary" size="sm" onClick={() => void copySnippet()}>
+                      {copied ? (
+                        <CheckCircle2 className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Copy className="size-4" aria-hidden="true" />
+                      )}
+                      {copied ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                  <CodeBlock className="text-xs">{deployment.embedSnippet}</CodeBlock>
+                  <p className="text-xs text-muted-foreground">
+                    Paste this on any site you want the widget to appear on — it will only respond on
+                    domains listed below.
+                  </p>
+                </div>
+              ) : (
+                <EmptyState
+                  title="Not published yet"
+                  description="Publish this bot to create a live deployment and get an embed snippet."
+                />
+              )}
+            </>
+          ) : null}
+        </PanelBody>
+      </Panel>
+
+      <Panel className="min-w-0">
+        <PanelHeader>
+          <PanelTitle>Allowed domains</PanelTitle>
+          <PanelDescription>
+            Only requests from these domains can use this bot&apos;s widget — this protects your
+            connected provider key from being spent by other sites.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <form
+            onSubmit={(event) => void handleAddDomain(event)}
+            className="flex flex-col gap-2 sm:flex-row sm:items-start"
+          >
+            <div className="min-w-0 flex-1">
+              <TextInput
+                aria-label="Domain pattern"
+                value={newPattern}
+                onChange={(event) => setNewPattern(event.target.value)}
+                placeholder="example.com, *.example.com, or localhost"
+              />
+              {addDomainError ? (
+                <p className="mt-1.5 break-words text-xs text-danger">{addDomainError}</p>
+              ) : null}
+            </div>
+            <Button type="submit" size="md" disabled={isAddingDomain || !newPattern.trim()}>
+              {isAddingDomain ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="size-4" aria-hidden="true" />
+              )}
+              Add domain
+            </Button>
+          </form>
+
+          <div className="grid gap-1.5 rounded-md border border-border bg-surface-raised p-3 text-xs text-muted-foreground">
+            <p>
+              <span className="font-mono text-foreground">example.com</span> — exact host only.
+            </p>
+            <p>
+              <span className="font-mono text-foreground">*.example.com</span> — any subdomain, not the
+              bare domain itself.
+            </p>
+            <p>
+              <span className="font-mono text-foreground">localhost</span> /{' '}
+              <span className="font-mono text-foreground">127.0.0.1</span> — any port, for local
+              development.
+            </p>
+            <p>Requests from domains not listed here are rejected — fail closed, no exceptions.</p>
+          </div>
+
+          {domainsError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{domainsError}</span>
+            </div>
+          ) : null}
+
+          {isLoadingDomains ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading allowed domains...
+            </div>
+          ) : domains.length === 0 ? (
+            <EmptyState
+              title="No allowed domains yet"
+              description="Add a domain above before embedding this bot's widget anywhere."
+            />
+          ) : (
+            <DataTable className="w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead className="w-16">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <tbody>
+                {domains.map((domain) => (
+                  <AllowedDomainRow key={domain.id} domain={domain} onDelete={setDomainPendingDelete} />
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </PanelBody>
+      </Panel>
+
+      {domainPendingDelete ? (
+        <DeleteAllowedDomainModal
+          pattern={domainPendingDelete.pattern}
+          isDeleting={isDeletingDomain}
+          error={deleteDomainError}
+          onCancel={() => {
+            setDomainPendingDelete(null);
+            setDeleteDomainError(null);
+          }}
+          onConfirm={() => void handleDeleteDomain()}
+        />
       ) : null}
     </div>
   );
@@ -1889,6 +4246,81 @@ function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: stri
   );
 }
 
+function PublishBotModal({
+  bot,
+  isPublishing,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  bot: BotRow;
+  isPublishing: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="publish-bot-title"
+        className="w-full max-w-md rounded-lg border border-border bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10">
+            <Rocket className="size-5 text-primary" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="publish-bot-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Publish &ldquo;{bot.name}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Creates a new immutable version from the current saved draft and makes it live in
+              Production. Visitors chatting through the embedded widget start seeing this version
+              immediately.
+            </p>
+            {!hasActiveCredential ? (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  No active provider key is selected — publishing will fail until one is chosen in
+                  Configuration.
+                </span>
+              </div>
+            ) : null}
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isPublishing} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="md" disabled={isPublishing} onClick={onConfirm}>
+            {isPublishing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Rocket className="size-4" aria-hidden="true" />
+            )}
+            Publish
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BotDetailScreen({
   activeTab,
   activeConfigurationPanel,
@@ -1908,6 +4340,40 @@ function BotDetailScreen({
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  async function handlePublish() {
+    if (!workspaceOrganisationId.trim()) {
+      setPublishError('Bot configuration needs a configured workspace organisation id.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setPublishError(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}/publish`, apiBaseUrl),
+        { method: 'POST', credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const updatedBot = botSchema.parse(await response.json());
+      onBotUpdated(updatedBot);
+      setIsPublishModalOpen(false);
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : 'Could not publish this bot.');
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
   return (
     <div className="grid min-w-0 gap-5">
       <div className="grid min-w-0 gap-4 border-b border-border pb-4">
@@ -1955,7 +4421,7 @@ function BotDetailScreen({
               <Play className="size-4" aria-hidden="true" />
               Test
             </Button>
-            <Button size="md">
+            <Button size="md" onClick={() => setIsPublishModalOpen(true)}>
               <Rocket className="size-4" aria-hidden="true" />
               Publish
             </Button>
@@ -1987,8 +4453,34 @@ function BotDetailScreen({
           onOpenModelProviders={onOpenModelProviders}
         />
       ) : null}
-      {activeTab !== 'overview' && activeTab !== 'configuration' ? (
+      {activeTab === 'knowledge' ? (
+        <BotDetailKnowledge bot={bot} onOpenModelProviders={onOpenModelProviders} />
+      ) : null}
+      {activeTab === 'playground' ? (
+        <BotDetailPlayground bot={bot} onOpenModelProviders={onOpenModelProviders} />
+      ) : null}
+      {activeTab === 'conversations' ? <BotDetailConversations botId={bot.id} /> : null}
+      {activeTab === 'deployments' ? <BotDetailDeployments bot={bot} /> : null}
+      {activeTab !== 'overview' &&
+      activeTab !== 'configuration' &&
+      activeTab !== 'knowledge' &&
+      activeTab !== 'playground' &&
+      activeTab !== 'conversations' &&
+      activeTab !== 'deployments' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
+      ) : null}
+
+      {isPublishModalOpen ? (
+        <PublishBotModal
+          bot={bot}
+          isPublishing={isPublishing}
+          error={publishError}
+          onCancel={() => {
+            setIsPublishModalOpen(false);
+            setPublishError(null);
+          }}
+          onConfirm={() => void handlePublish()}
+        />
       ) : null}
     </div>
   );
@@ -3631,6 +6123,8 @@ export function AppShell() {
                   onOpenLinkedBots={openLinkedBots}
                   onCredentialsChanged={() => void loadBots()}
                 />
+              ) : activeItemId === 'conversations' ? (
+                <ConversationsScreen />
               ) : activeItemId === 'settings' ? (
                 <SettingsScreen user={sessionUser} />
               ) : (

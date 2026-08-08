@@ -1,16 +1,23 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BotsService } from './bots.service.js';
 
 const now = new Date('2026-07-19T10:00:00.000Z');
 
 function createPrismaMock() {
-  return {
+  const prisma = {
     bot: {
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+    },
+    botVersion: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
+    botDeployment: {
+      upsert: vi.fn(),
     },
     organisationMember: {
       findUnique: vi.fn(),
@@ -18,7 +25,14 @@ function createPrismaMock() {
     providerCredential: {
       findFirst: vi.fn(),
     },
+    $transaction: vi.fn(),
   };
+
+  prisma.$transaction.mockImplementation((callback: (tx: typeof prisma) => unknown) =>
+    callback(prisma),
+  );
+
+  return prisma;
 }
 
 describe('BotsService', () => {
@@ -399,5 +413,101 @@ describe('BotsService', () => {
 
     await expect(service.listBots('org-1', 'user-2')).rejects.toBeInstanceOf(ForbiddenException);
     expect(prisma.bot.findMany).not.toHaveBeenCalled();
+  });
+
+  describe('publishBot', () => {
+    const draftBot = {
+      id: 'bot-1',
+      organisationId: 'org-1',
+      name: 'Docs Assistant',
+      description: 'Answers docs questions',
+      status: 'DRAFT',
+      initials: 'DA',
+      welcomeMessage: 'Welcome.',
+      instructions: 'Answer from docs only.',
+      tone: 'Concise and technical',
+      handoffBehavior: 'Escalate after low-confidence answer',
+      providerCredentialId: 'credential-1',
+      model: 'gpt-4o-mini',
+      temperature: 0.25,
+      responseLength: 'brief',
+      retrievalMode: 'semantic',
+      maxSources: 4,
+      citationStyle: 'footer_source_list',
+      widgetTheme: 'Dark system default',
+      widgetPosition: 'Bottom right',
+      strictKnowledge: true,
+      promptInjectionProtection: true,
+      piiRedaction: true,
+      collectFeedback: true,
+      humanHandoff: false,
+      createdAt: now,
+      updatedAt: now,
+      providerCredential: { provider: 'OPENAI', label: 'Production OpenAI', status: 'ACTIVE' },
+    };
+
+    it('creates the first immutable version and a PRODUCTION deployment on first publish', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.bot.findFirst.mockResolvedValue(draftBot);
+      prisma.botVersion.findFirst.mockResolvedValue(null);
+      prisma.botVersion.create.mockResolvedValue({ id: 'ver_1' });
+      prisma.bot.update.mockResolvedValue({ ...draftBot, status: 'PUBLISHED' });
+
+      const result = await service.publishBot('org-1', 'user-1', 'bot-1');
+
+      expect(prisma.botVersion.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { botId: 'bot-1' }, orderBy: { versionNumber: 'desc' } }),
+      );
+      expect(prisma.botVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            organisationId: 'org-1',
+            botId: 'bot-1',
+            versionNumber: 1,
+            publishedById: 'user-1',
+            configSnapshot: expect.objectContaining({
+              instructions: 'Answer from docs only.',
+              model: 'gpt-4o-mini',
+              providerCredentialId: 'credential-1',
+            }),
+          }),
+        }),
+      );
+      expect(prisma.botDeployment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { botId_environment: { botId: 'bot-1', environment: 'PRODUCTION' } },
+          create: expect.objectContaining({ botId: 'bot-1', currentVersionId: 'ver_1' }),
+          update: expect.objectContaining({ currentVersionId: 'ver_1', status: 'ACTIVE' }),
+        }),
+      );
+      expect(prisma.bot.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'bot-1' }, data: { status: 'PUBLISHED' } }),
+      );
+      expect(result.status).toBe('published');
+    });
+
+    it('increments the version number on republish', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.bot.findFirst.mockResolvedValue(draftBot);
+      prisma.botVersion.findFirst.mockResolvedValue({ versionNumber: 4 });
+      prisma.botVersion.create.mockResolvedValue({ id: 'ver_5' });
+      prisma.bot.update.mockResolvedValue({ ...draftBot, status: 'PUBLISHED' });
+
+      await service.publishBot('org-1', 'user-1', 'bot-1');
+
+      expect(prisma.botVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ versionNumber: 5 }) }),
+      );
+    });
+
+    it('throws NotFoundException when the bot is outside the tenant scope', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.bot.findFirst.mockResolvedValue(null);
+
+      await expect(service.publishBot('org-1', 'user-1', 'bot-x')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.botVersion.create).not.toHaveBeenCalled();
+    });
   });
 });

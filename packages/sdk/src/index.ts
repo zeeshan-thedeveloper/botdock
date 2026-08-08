@@ -1,12 +1,4 @@
-export interface BotDockClientOptions {
-  apiBaseUrl: string;
-  apiKey?: string;
-}
-
-export class BotDockClient {
-  constructor(private readonly options: BotDockClientOptions) {}
-
-  get apiBaseUrl() {
-    return this.options.apiBaseUrl;
-  }
-}
+export { BotDockClient, type BotDockClientOptions, type SendMessageInput } from './client.js';
+export { BotDockClientError, type BotDockClientErrorKind } from './errors.js';
+export { InMemorySessionStorage, type SessionStorageLike } from './session.js';
+export type { ChatCitationSource, ChatStreamEvent } from '@botdock/contracts';

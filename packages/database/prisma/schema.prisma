@@ -35,6 +35,47 @@ enum ProviderCredentialStatus {
   INVALID
 }
 
+enum KnowledgeSourceType {
+  FILE
+  TEXT
+  FAQ
+}
+
+enum KnowledgeSourceStatus {
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum DocumentParseStatus {
+  PENDING
+  PARSED
+  FAILED
+}
+
+enum ConversationSource {
+  PLAYGROUND
+  WIDGET
+  API
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+}
+
+enum DeploymentEnvironment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum DeploymentStatus {
+  ACTIVE
+  DISABLED
+}
+
 model User {
   id              String    @id @default(cuid())
   email           String    @unique
@@ -49,6 +90,8 @@ model User {
   identities                 OAuthIdentity[]
   sessions                   AuthSession[]
   providerCredentialsCreated ProviderCredential[] @relation("ProviderCredentialCreatedBy")
+  botVersionsPublished       BotVersion[]         @relation("BotVersionPublishedBy")
+  allowedDomainsCreated      AllowedDomain[]      @relation("AllowedDomainCreatedBy")
 
   @@map("users")
 }
@@ -99,6 +142,14 @@ model Organisation {
   members             OrganisationMember[]
   bots                Bot[]
   providerCredentials ProviderCredential[]
+  knowledgeSources    KnowledgeSource[]
+  documents           Document[]
+  documentChunks      DocumentChunk[]
+  conversations       Conversation[]
+  usageRecords        UsageRecord[]
+  botVersions         BotVersion[]
+  botDeployments      BotDeployment[]
+  allowedDomains      AllowedDomain[]
 
   @@map("organisations")
 }
@@ -151,6 +202,14 @@ model Bot {
   organisation       Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
   createdBy          User                @relation("BotCreatedBy", fields: [createdById], references: [id])
   providerCredential ProviderCredential? @relation(fields: [providerCredentialId], references: [id], onDelete: SetNull)
+  knowledgeSources   KnowledgeSource[]
+  documents          Document[]
+  documentChunks     DocumentChunk[]
+  conversations      Conversation[]
+  usageRecords       UsageRecord[]
+  versions           BotVersion[]
+  deployments        BotDeployment[]
+  allowedDomains     AllowedDomain[]
 
   @@index([organisationId])
   @@index([createdById])
@@ -179,4 +238,248 @@ model ProviderCredential {
   @@index([organisationId])
   @@index([createdById])
   @@map("provider_credentials")
+}
+
+/// A tenant-scoped knowledge base attached to one bot. The embedding model is
+/// pinned here because vectors from different models are not comparable —
+/// changing it requires a new source (or re-embedding every chunk) rather
+/// than an in-place update.
+model KnowledgeSource {
+  id                  String                 @id @default(cuid())
+  organisationId      String
+  botId               String
+  type                KnowledgeSourceType
+  name                String
+  status              KnowledgeSourceStatus  @default(PROCESSING)
+  embeddingProvider   ModelProvider
+  embeddingModel      String
+  embeddingDimensions Int
+  chunkCount          Int                    @default(0)
+  errorMessage        String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  organisation Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  chunks       DocumentChunk[]
+
+  @@index([organisationId, botId])
+  @@index([botId])
+  @@map("knowledge_sources")
+}
+
+/// Raw file/text metadata for one upload within a knowledge source. Object
+/// storage holds the bytes; this row tracks parse state on the way to chunks.
+model Document {
+  id                String              @id @default(cuid())
+  organisationId    String
+  botId             String
+  knowledgeSourceId String
+  fileName          String?
+  mimeType          String?
+  objectStorageKey  String?
+  checksum          String?
+  sizeBytes         Int?
+  parseStatus       DocumentParseStatus @default(PENDING)
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  organisation    Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot             Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  chunks          DocumentChunk[]
+
+  @@index([organisationId, botId])
+  @@index([knowledgeSourceId])
+  @@map("documents")
+}
+
+/// One retrievable, embedded slice of a document (or a directly-entered FAQ
+/// answer). `embedding` is a pgvector column (see migration SQL — Prisma has
+/// no native vector type, so it's declared `Unsupported` and queried via raw
+/// SQL in KN-004). Dimension is fixed by the source's pinned embedding model;
+/// switching models means re-embedding every chunk under a new dimension.
+model DocumentChunk {
+  id                String   @id @default(cuid())
+  organisationId    String
+  botId             String
+  knowledgeSourceId String
+  documentId        String?
+  content           String
+  metadata          Json?
+  embedding         Unsupported("vector(1536)")?
+  embeddingModel    String
+  createdAt         DateTime @default(now())
+
+  organisation    Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot             Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+  knowledgeSource KnowledgeSource @relation(fields: [knowledgeSourceId], references: [id], onDelete: Cascade)
+  document        Document?       @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, botId])
+  @@index([knowledgeSourceId])
+  @@map("document_chunks")
+}
+
+/// One chat thread. `source` distinguishes the authenticated playground from
+/// the public widget/API so usage and history can be filtered by channel.
+model Conversation {
+  id             String             @id @default(cuid())
+  organisationId String
+  botId          String
+  source         ConversationSource
+  visitorId      String?
+  title          String?
+  startedAt      DateTime           @default(now())
+  lastMessageAt  DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages     Message[]
+  usageRecords UsageRecord[]
+
+  @@index([organisationId, botId])
+  @@index([botId, lastMessageAt])
+  @@map("conversations")
+}
+
+/// One turn in a conversation. Token/latency/cost fields are populated for
+/// ASSISTANT messages only (the chat runtime's own accounting), not user
+/// input.
+model Message {
+  id               String      @id @default(cuid())
+  conversationId   String
+  role             MessageRole
+  content          String      @db.Text
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  estCostUsd       Decimal?    @db.Decimal(12, 6)
+  createdAt        DateTime    @default(now())
+
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sources      MessageSource[]
+  usageRecords UsageRecord[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+/// A citation attached to an assistant message. `knowledgeSourceId` and
+/// `documentChunkId` are deliberately soft references (plain columns, no FK):
+/// citations are part of conversation history and must survive the cited
+/// knowledge later being edited or deleted, per CHAT-001's spec.
+model MessageSource {
+  id                String   @id @default(cuid())
+  messageId         String
+  knowledgeSourceId String?
+  documentChunkId   String?
+  label             String
+  location          String?
+  score             Float
+  createdAt         DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_sources")
+}
+
+/// Cost/usage ledger row, one per provider call. Kept on SetNull (not
+/// Cascade) from conversation/message so usage/billing history outlives a
+/// deleted conversation.
+model UsageRecord {
+  id               String             @id @default(cuid())
+  organisationId   String
+  botId            String
+  conversationId   String?
+  messageId        String?
+  provider         String
+  model            String
+  promptTokens     Int
+  completionTokens Int
+  latencyMs        Int
+  estCostUsd       Decimal            @db.Decimal(12, 6)
+  source           ConversationSource
+  createdAt        DateTime           @default(now())
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([organisationId, createdAt])
+  @@index([botId, createdAt])
+  @@map("usage_records")
+}
+
+/// An immutable snapshot of a bot's full effective config at publish time.
+/// Never mutated after creation — `versionNumber` increments per bot. The
+/// mutable working copy stays on `Bot`; this is the published history.
+model BotVersion {
+  id              String   @id
+  organisationId  String
+  botId           String
+  versionNumber   Int
+  configSnapshot  Json
+  note            String?
+  publishedById   String
+  createdAt       DateTime @default(now())
+
+  organisation Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot              @relation(fields: [botId], references: [id], onDelete: Cascade)
+  publishedBy  User             @relation("BotVersionPublishedBy", fields: [publishedById], references: [id])
+  deployments  BotDeployment[]
+
+  @@unique([botId, versionNumber])
+  @@index([botId, createdAt])
+  @@map("bot_versions")
+}
+
+/// A public, addressable deployment target for a bot (one per environment).
+/// `id` is a prefixed, non-guessable public identifier (`dep_...`) — this is
+/// the `deploymentId` the widget/embed will use (CHAT-005, DIST-001).
+model BotDeployment {
+  id                String                @id
+  organisationId    String
+  botId             String
+  environment       DeploymentEnvironment
+  currentVersionId  String?
+  status            DeploymentStatus      @default(ACTIVE)
+  publishedAt       DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot            Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  currentVersion BotVersion?  @relation(fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([botId, environment])
+  @@index([organisationId])
+  @@map("bot_deployments")
+}
+
+/// A domain (or `*.` wildcard) a bot's widget is allowed to run on. Scoped to
+/// the bot rather than a specific deployment/environment for MVP — see
+/// origin.util.ts's isOriginAllowed for the matching rules this enforces.
+model AllowedDomain {
+  id             String   @id @default(cuid())
+  organisationId String
+  botId          String
+  pattern        String
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bot          Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("AllowedDomainCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([botId, pattern])
+  @@index([botId])
+  @@map("allowed_domains")
 }

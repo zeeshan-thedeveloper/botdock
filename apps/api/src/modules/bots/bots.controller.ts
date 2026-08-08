@@ -37,4 +37,14 @@ export class BotsController {
   ): Promise<Bot> {
     return this.botsService.updateBot(organisationId, user.id, botId, body);
   }
+
+  @Post('organisations/:orgId/bots/:id/publish')
+  @ApiOkResponse({ description: 'Publishes the draft config as a new immutable version.' })
+  publishBot(
+    @Param('orgId') organisationId: string,
+    @Param('id') botId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<Bot> {
+    return this.botsService.publishBot(organisationId, user.id, botId);
+  }
 }

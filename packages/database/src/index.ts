@@ -1,7 +1,17 @@
-export { PrismaClient } from '@prisma/client';
+export { Prisma, PrismaClient } from '@prisma/client';
 export type {
+  AllowedDomain,
   AuthSession,
   Bot,
+  BotDeployment,
+  BotVersion,
+  Conversation,
+  ConversationSource,
+  DeploymentEnvironment,
+  DeploymentStatus,
+  Message,
+  MessageRole,
+  MessageSource,
   ModelProvider,
   OAuthIdentity,
   OAuthProvider,
@@ -9,5 +19,6 @@ export type {
   OrganisationMember,
   ProviderCredential,
   ProviderCredentialStatus,
+  UsageRecord,
   User,
 } from '@prisma/client';

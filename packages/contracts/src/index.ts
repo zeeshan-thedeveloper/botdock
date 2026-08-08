@@ -210,3 +210,191 @@ export const updateBotSchema = z.object({
 });
 
 export type UpdateBotInput = z.infer<typeof updateBotSchema>;
+
+export const knowledgeSourceTypeSchema = z.enum(['file', 'text', 'faq']);
+
+export type KnowledgeSourceType = z.infer<typeof knowledgeSourceTypeSchema>;
+
+export const knowledgeSourceStatusSchema = z.enum(['processing', 'ready', 'failed']);
+
+export type KnowledgeSourceStatus = z.infer<typeof knowledgeSourceStatusSchema>;
+
+export const knowledgeSourceSchema = z.object({
+  id: z.string(),
+  organisationId: z.string(),
+  botId: z.string(),
+  type: knowledgeSourceTypeSchema,
+  name: z.string(),
+  status: knowledgeSourceStatusSchema,
+  embeddingProvider: modelProviderSchema,
+  embeddingModel: z.string(),
+  chunkCount: z.number().int().min(0),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export type KnowledgeSource = z.infer<typeof knowledgeSourceSchema>;
+
+export const knowledgeSourcesResponseSchema = z.object({
+  sources: z.array(knowledgeSourceSchema),
+});
+
+export type KnowledgeSourcesResponse = z.infer<typeof knowledgeSourcesResponseSchema>;
+
+export const createKnowledgeSourceSchema = z.object({
+  type: knowledgeSourceTypeSchema,
+  name: z.string().trim().min(1).max(160),
+  content: z.string().max(200_000).optional(),
+});
+
+export type CreateKnowledgeSourceInput = z.infer<typeof createKnowledgeSourceSchema>;
+
+export const chatConversationSourceSchema = z.enum(['PLAYGROUND', 'WIDGET', 'API']);
+
+export type ChatConversationSource = z.infer<typeof chatConversationSourceSchema>;
+
+export const chatCitationSourceSchema = z.object({
+  label: z.string(),
+  location: z.string().nullable(),
+  score: z.number(),
+  knowledgeSourceId: z.string().nullable(),
+});
+
+export type ChatCitationSource = z.infer<typeof chatCitationSourceSchema>;
+
+export const chatStreamEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('token'), delta: z.string() }),
+  z.object({ type: z.literal('citation'), sources: z.array(chatCitationSourceSchema) }),
+  z.object({
+    type: z.literal('trace'),
+    requestId: z.string(),
+    model: z.string(),
+    contextTokens: z.number().int().min(0),
+    retrievedChunks: z.array(z.object({ label: z.string(), score: z.number() })),
+    promptPreview: z.string(),
+  }),
+  z.object({
+    type: z.literal('usage'),
+    promptTokens: z.number().int().min(0),
+    completionTokens: z.number().int().min(0),
+    latencyMs: z.number().min(0),
+    estCostUsd: z.number().min(0),
+  }),
+  z.object({ type: z.literal('done'), conversationId: z.string(), messageId: z.string() }),
+  z.object({ type: z.literal('error'), code: z.string(), message: z.string() }),
+]);
+
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+
+export const playgroundMessageSchema = z.object({
+  conversationId: z.string().optional(),
+  message: z.string().trim().min(1).max(8000),
+});
+
+export type PlaygroundMessageInput = z.infer<typeof playgroundMessageSchema>;
+
+export const allowedDomainSchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  pattern: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export type AllowedDomain = z.infer<typeof allowedDomainSchema>;
+
+export const allowedDomainsResponseSchema = z.object({
+  domains: z.array(allowedDomainSchema),
+});
+
+export type AllowedDomainsResponse = z.infer<typeof allowedDomainsResponseSchema>;
+
+export const createAllowedDomainSchema = z.object({
+  pattern: z.string().trim().min(1).max(253),
+});
+
+export type CreateAllowedDomainInput = z.infer<typeof createAllowedDomainSchema>;
+
+export const deploymentStatusSchema = z.enum(['active', 'disabled']);
+
+export type DeploymentStatus = z.infer<typeof deploymentStatusSchema>;
+
+export const deploymentInfoSchema = z.object({
+  deploymentId: z.string().nullable(),
+  environment: z.literal('production'),
+  status: deploymentStatusSchema.nullable(),
+  currentVersionNumber: z.number().int().nullable(),
+  publishedAt: z.string().datetime().nullable(),
+  embedSnippet: z.string().nullable(),
+});
+
+export type DeploymentInfo = z.infer<typeof deploymentInfoSchema>;
+
+export const widgetMessageSchema = z.object({
+  conversationId: z.string().optional(),
+  visitorId: z.string().max(200).optional(),
+  message: z.string().trim().min(1).max(8000),
+});
+
+export type WidgetMessageInput = z.infer<typeof widgetMessageSchema>;
+
+export const messageRoleSchema = z.enum(['SYSTEM', 'USER', 'ASSISTANT']);
+
+export type MessageRole = z.infer<typeof messageRoleSchema>;
+
+export const conversationUsageSummarySchema = z.object({
+  promptTokens: z.number().int().min(0),
+  completionTokens: z.number().int().min(0),
+  estCostUsd: z.number().min(0),
+});
+
+export type ConversationUsageSummary = z.infer<typeof conversationUsageSummarySchema>;
+
+export const conversationSummarySchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  botName: z.string(),
+  source: chatConversationSourceSchema,
+  visitorId: z.string().nullable(),
+  messageCount: z.number().int().min(0),
+  lastMessagePreview: z.string().nullable(),
+  lastMessageAt: z.string().datetime(),
+  usage: conversationUsageSummarySchema,
+});
+
+export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+
+export const conversationsListResponseSchema = z.object({
+  conversations: z.array(conversationSummarySchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type ConversationsListResponse = z.infer<typeof conversationsListResponseSchema>;
+
+export const conversationMessageSchema = z.object({
+  id: z.string(),
+  role: messageRoleSchema,
+  content: z.string(),
+  createdAt: z.string().datetime(),
+  model: z.string().nullable(),
+  promptTokens: z.number().int().min(0).nullable(),
+  completionTokens: z.number().int().min(0).nullable(),
+  latencyMs: z.number().min(0).nullable(),
+  estCostUsd: z.number().min(0).nullable(),
+  citations: z.array(chatCitationSourceSchema),
+});
+
+export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
+
+export const conversationDetailResponseSchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  botName: z.string(),
+  source: chatConversationSourceSchema,
+  visitorId: z.string().nullable(),
+  startedAt: z.string().datetime(),
+  lastMessageAt: z.string().datetime(),
+  messages: z.array(conversationMessageSchema),
+});
+
+export type ConversationDetailResponse = z.infer<typeof conversationDetailResponseSchema>;
