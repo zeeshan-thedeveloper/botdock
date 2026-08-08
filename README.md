@@ -4,33 +4,37 @@ BotDock is a multi-tenant platform for configuring, publishing, embedding, and m
 
 ## Problem
 
-Teams need chatbot infrastructure that behaves like a product platform rather than a one-off OpenAI demo. BotDock is designed around tenant isolation, configurable bot drafts, future published versions, embeddable runtime delivery, retrieval boundaries, streaming responses, and operational visibility.
+Teams need chatbot infrastructure that behaves like a product platform rather than a one-off OpenAI demo. BotDock is built around tenant isolation, bring-your-own-key (BYOK) model billing, versioned publishing, embeddable runtime delivery, retrieval-grounded responses, streaming chat, and conversation inspection.
 
 ## Main Product Flow
 
-1. User creates an account and joins an organisation.
-2. Organisation creates and configures a chatbot.
-3. Owner adds knowledge sources and tests the bot in a playground.
-4. Owner publishes a version and receives JavaScript embed code.
-5. A visitor chats with the embedded widget on an external site.
-6. Owner inspects conversations, sources, latency, model metadata, usage, cost, feedback, and errors.
+1. User creates an account and joins an organisation (Google or GitHub OAuth).
+2. Organisation connects its own OpenAI API key (BYOK — see `docs/architecture/byok-and-configuration.md`).
+3. Organisation creates and configures a chatbot: identity, instructions, model, appearance, safety.
+4. Owner adds knowledge sources and tests the bot in an authenticated playground, with streaming responses and a debug trace.
+5. Owner publishes a version, registers allowed embed domains, and copies the JavaScript embed snippet.
+6. A visitor chats with the embedded widget on an external site — streamed, citation-grounded, rate-limited, origin-restricted.
+7. Owner inspects the resulting conversations: transcript, citations, and per-message model/token/latency/cost.
 
-## Planned Architecture
+This loop is implemented end to end and verified live (not just unit-tested) at every step — see `docs/api/overview.md` for the current route surface and `docs/architecture/` for how each piece works.
 
-- `apps/web`: Next.js dashboard and future playground.
-- `apps/api`: NestJS API, validation, OpenAPI docs, health checks, future streaming chat runtime.
-- `apps/widget`: Vite-built framework-independent embeddable widget.
-- `apps/demo-site`: External website shell that demonstrates widget consumption.
-- `packages/database`: Prisma schema and generated client.
-- `packages/contracts`: Shared Zod contracts and TypeScript types.
-- `packages/ai-core`: AI provider interfaces and local mock providers.
-- `packages/config`, `packages/logger`, `packages/ui`, `packages/sdk`, `packages/testing`: shared platform packages.
+## Architecture
+
+- `apps/web`: Next.js dashboard — bot configuration, knowledge, playground, deployments/allowed domains, conversation inspection.
+- `apps/api`: NestJS API — auth, tenant-scoped CRUD, the SSE chat runtime, knowledge ingestion, publishing, the public widget endpoint.
+- `apps/widget`: Vite-built, dependency-light, framework-independent embeddable widget.
+- `apps/demo-site`: external website shell that demonstrates real widget integration.
+- `packages/database`: Prisma schema, migrations, generated client.
+- `packages/contracts`: shared Zod contracts and TypeScript types — the source of truth for API shapes.
+- `packages/ai-core`: AI provider interfaces (OpenAI) with retry/timeout/error-mapping and cost estimation.
+- `packages/sdk`: framework-agnostic streaming client over the public widget API; the widget itself is its reference consumer.
+- `packages/config`, `packages/logger`, `packages/ui`, `packages/testing`: shared platform packages.
 
 ## Technology Stack
 
 - TypeScript monorepo with pnpm workspaces and Turborepo.
-- Next.js App Router, Tailwind CSS, React Hook Form, Zod, TanStack Query.
-- NestJS, Prisma, PostgreSQL with pgvector, Redis, BullMQ-ready infrastructure, Swagger/OpenAPI.
+- Next.js App Router, Tailwind CSS, Zod.
+- NestJS, Prisma, PostgreSQL with pgvector, Redis (BullMQ ingestion worker + widget rate limiting), MinIO/S3, Swagger/OpenAPI.
 - Vite for widget and demo-site bundles.
 - ESLint, Prettier, Vitest, GitHub Actions CI.
 
@@ -61,9 +65,9 @@ Private planning lives in `.project/`, which is ignored by git.
 
 ## Current Implementation Status
 
-- Implemented: monorepo foundation, shared config packages, minimal Prisma schema, API health endpoint, dashboard shell, widget shell, demo-site shell, Docker Compose, CI, documentation.
-- In Progress: repository foundation verification.
-- Planned: authentication, organisations UI, bot configuration, RAG ingestion, streaming runtime, publishing, analytics, API keys, domain restrictions.
+**Implemented and live-verified**: OAuth authentication, BYOK provider credentials, bot configuration (draft + publish), knowledge ingestion (text/file sources, chunking, embeddings, pgvector retrieval), the SSE chat runtime (authenticated playground + public widget), publishing and versioning, allowed-domains/embed snippet management, the embeddable widget and its SDK, and read-only conversation inspection.
+
+**Not yet implemented**: analytics/usage aggregation dashboards, billing, team/organisation membership management UI, conversation mutations (mark-for-review/archive/export), and a production hosting pipeline for the widget/demo-site/dashboard (only the API deploys to production today).
 
 ## Local Setup
 
@@ -114,7 +118,7 @@ This starts:
 
 - `botdock/api:local` on `http://localhost:4000`
 - `botdock/web:local` on `http://localhost:3000`
-- `botdock/widget:local` on `http://localhost:5173/botdock-widget.js`
+- `botdock/widget:local` on `http://localhost:5173/v1/botdock-widget.js`
 - `botdock/demo-site:local` on `http://localhost:5174`
 - PostgreSQL with pgvector, Redis, and MinIO
 
@@ -133,7 +137,12 @@ docker compose run --rm api pnpm db:seed
 
 ## Environment Variables
 
-Use `.env.example` as the local template. Do not commit real credentials.
+Use `.env.example` as the local template — it's kept up to date with every
+variable the API actually reads (`packages/config`'s environment schema
+fails fast on boot if anything required is missing). Do not commit real
+credentials. See `docs/architecture/authentication.md` for OAuth app setup
+and `docs/architecture/byok-and-configuration.md` for
+`PROVIDER_CREDENTIAL_ENC_KEY`.
 
 ## Testing And Quality
 
@@ -147,28 +156,23 @@ pnpm format:check
 
 ## Security Principles
 
-- Tenant-owned data must be scoped to an organisation.
-- Validation belongs at API boundaries.
-- API keys will be hashed before storage.
-- Future public chatbot runtime will enforce domain restrictions and rate limits.
-- Widget-rendered content must be sanitized and isolated from host CSS.
-- Logs should be structured and avoid secrets or sensitive message content by default.
+- Tenant-owned data is scoped to an organisation, enforced at the service layer on every tenant-scoped endpoint — not just at the schema level.
+- Validation happens at API boundaries (Zod contracts + class-validator DTOs).
+- BYOK provider secrets are AES-256-GCM encrypted at rest and never returned in API responses.
+- The public widget runtime enforces per-bot allowed-domain origin checks (fail closed) and Redis-backed rate limiting.
+- Widget content renders inside an isolated shadow root, separate from host page CSS.
+- Logs are structured JSON and avoid secrets or sensitive message content by default.
 
-## Roadmap Summary
+## Documentation
 
-- Phase 0: Repository foundation.
-- Phase 1: Authentication and organisations.
-- Phase 2: Bot configuration.
-- Phase 3: Knowledge ingestion.
-- Phase 4: Chat runtime.
-- Phase 5: Publishing and widget.
-- Phase 6: Conversations and analytics.
-- Phase 7: Security and hardening.
-- Phase 8: Portfolio polish and deployment.
-
-## Limitations
-
-BotDock does not yet include authentication, uploads, RAG, production AI calls, streaming chat APIs, published bot versions, billing, or analytics. The current state is a production-minded foundation for incremental development.
+- `docs/api/overview.md` — current route surface.
+- `docs/architecture/overview.md` — how the pieces fit together.
+- `docs/architecture/authentication.md` — OAuth setup, production callback URLs, troubleshooting.
+- `docs/architecture/byok-and-configuration.md` — the BYOK model and bot configuration.
+- `docs/architecture/knowledge-ingestion.md` — the ingestion pipeline.
+- `docs/architecture/chat-runtime.md` — the SSE chat protocol and pipeline.
+- `docs/architecture/widget-integration.md` — the embeddable widget.
+- `docs/decisions/` — public-facing architecture decisions.
 
 ## Screenshots
 
