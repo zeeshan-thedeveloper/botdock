@@ -36,6 +36,27 @@ describe('AllExceptionsFilter', () => {
     );
   });
 
+  it('surfaces the real class-validator message array instead of the generic exception-class name', () => {
+    const filter = new AllExceptionsFilter();
+    const exception = new HttpException(
+      {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: ['Enter a domain (example.com), a wildcard subdomain (*.example.com), localhost, 127.0.0.1, or null.'],
+        error: 'Bad Request',
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+    const { host, json } = createHost({ url: '/organisations/org-1/bots/bot-1/allowed-domains' });
+
+    filter.catch(exception, host as never);
+
+    const body = json.mock.calls[0]?.[0];
+    expect(body.message).toBe(
+      'Enter a domain (example.com), a wildcard subdomain (*.example.com), localhost, 127.0.0.1, or null.',
+    );
+    expect(body.message).not.toBe('Bad Request Exception');
+  });
+
   it('omits extra fields for a plain string-message HttpException', () => {
     const filter = new AllExceptionsFilter();
     const exception = new HttpException('Not found.', HttpStatus.NOT_FOUND);

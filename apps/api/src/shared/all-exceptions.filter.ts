@@ -21,6 +21,36 @@ function extractExtraFields(exception: unknown): Record<string, unknown> {
   );
 }
 
+/**
+ * HttpException#message is NOT the response body's `message` field: Nest's
+ * initMessage() only copies it over when it's a string. class-validator's
+ * ValidationPipe throws BadRequestException with `message` as a string
+ * ARRAY (one entry per failed field), so that check fails and Nest falls
+ * back to deriving a generic message from the constructor name instead —
+ * "BadRequestException" -> "Bad Request Exception". Every DTO validation
+ * message (e.g. the allowed-domain pattern hint) was silently getting
+ * replaced by that generic string. Read the real message straight from the
+ * response body instead, string or array.
+ */
+function extractMessage(exception: unknown): string {
+  if (!(exception instanceof HttpException)) {
+    return 'An unexpected server error occurred.';
+  }
+
+  const body = exception.getResponse();
+  if (typeof body === 'object' && body !== null && 'message' in body) {
+    const message = (body as Record<string, unknown>).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+    if (Array.isArray(message)) {
+      return message.filter((entry): entry is string => typeof entry === 'string').join(' ');
+    }
+  }
+
+  return exception.message;
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -49,10 +79,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       statusCode: status,
       path: request.url,
       timestamp: new Date().toISOString(),
-      message:
-        exception instanceof HttpException
-          ? exception.message
-          : 'An unexpected server error occurred.',
+      message: extractMessage(exception),
       ...extraFields,
     });
   }
