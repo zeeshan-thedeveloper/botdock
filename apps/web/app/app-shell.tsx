@@ -23,6 +23,7 @@ import {
   type BotModelConfig,
   type BotResponseLength,
   type BotRetrievalMode,
+  type BotStats,
   type ChatCitationSource,
   type ChatConversationSource,
   type ChatStreamEvent,
@@ -228,13 +229,8 @@ type BotRow = {
   behaviorConfig: BotBehaviorConfig;
   modelConfig: BotModelConfig;
   environment: string;
-  knowledge: string;
-  conversations: number;
+  stats: BotStats;
   version: string;
-  resolutionRate: string;
-  feedbackRate: string;
-  estimatedCost: string;
-  errorRate: string;
   lastPublished: string;
   updatedBy: string;
   updatedAt: string;
@@ -252,18 +248,6 @@ type ProviderCredentialsMessage = {
 };
 
 const workspaceOrganisationId = process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '';
-
-const defaultBotModelConfig: BotModelConfig = {
-  providerCredentialId: null,
-  provider: null,
-  credentialLabel: null,
-  model: 'gpt-4o-mini',
-  temperature: 0.35,
-  responseLength: 'balanced',
-  retrievalMode: 'hybrid',
-  maxSources: 6,
-  citationStyle: 'inline_source_chips',
-};
 
 const defaultBotBehaviorConfig: BotBehaviorConfig = {
   initials: 'BD',
@@ -436,13 +420,8 @@ function toBotRow(bot: BotRecord): BotRow {
     behaviorConfig: bot.behaviorConfig,
     modelConfig: bot.modelConfig,
     environment: bot.status === 'published' ? 'Production' : 'Draft',
-    knowledge: 'No sources connected',
-    conversations: 0,
+    stats: bot.stats,
     version: bot.status === 'published' ? 'Published' : 'Draft',
-    resolutionRate: '0%',
-    feedbackRate: '0%',
-    estimatedCost: '$0.00',
-    errorRate: '0.00%',
     lastPublished:
       bot.status === 'published' ? getRelativeTimestamp(bot.updatedAt) : 'Not published',
     updatedBy: 'Workspace',
@@ -451,129 +430,10 @@ function toBotRow(bot: BotRecord): BotRow {
   };
 }
 
-const botRows: BotRow[] = [
-  {
-    id: 'bot_7f3a1',
-    name: 'Support Assistant',
-    description: 'Production customer support widget',
-    initials: 'SA',
-    status: 'Published',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'SA' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Production',
-    knowledge: '3 sources · 1,284 chunks',
-    conversations: 16204,
-    version: 'v14',
-    resolutionRate: '91.8%',
-    feedbackRate: '94.1%',
-    estimatedCost: '$41.20',
-    errorRate: '0.04%',
-    lastPublished: '2 days ago',
-    updatedBy: 'Jamie Doyle',
-    updatedAt: '24m ago',
-  },
-  {
-    id: 'bot_9c2d0',
-    name: 'Docs Assistant',
-    description: 'Answers API and SDK implementation questions',
-    initials: 'DA',
-    status: 'Processing',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'DA' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Staging',
-    knowledge: '7 sources · indexing',
-    conversations: 11850,
-    version: 'v9',
-    resolutionRate: '88.2%',
-    feedbackRate: '90.7%',
-    estimatedCost: '$38.90',
-    errorRate: '0.11%',
-    lastPublished: '6 days ago',
-    updatedBy: 'Mina Patel',
-    updatedAt: '41m ago',
-  },
-  {
-    id: 'bot_1aa84',
-    name: 'Sales Qualifier',
-    description: 'Routes high-intent leads to the revenue team',
-    initials: 'SQ',
-    status: 'Draft',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'SQ' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Draft',
-    knowledge: '2 sources · 318 chunks',
-    conversations: 4302,
-    version: 'v3',
-    resolutionRate: '84.5%',
-    feedbackRate: '87.0%',
-    estimatedCost: '$12.70',
-    errorRate: '0.08%',
-    lastPublished: 'Not published',
-    updatedBy: 'Eli Stone',
-    updatedAt: '1h ago',
-  },
-  {
-    id: 'bot_5e9b7',
-    name: 'Internal Knowledge Bot',
-    description: 'Employee-facing policy and billing reference',
-    initials: 'IK',
-    status: 'Error',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'IK' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Preview',
-    knowledge: '4 sources · sync failed',
-    conversations: 924,
-    version: 'v6',
-    resolutionRate: '72.4%',
-    feedbackRate: '74.8%',
-    estimatedCost: '$5.80',
-    errorRate: '2.80%',
-    lastPublished: '12 days ago',
-    updatedBy: 'Noor Ali',
-    updatedAt: '2h ago',
-    error: 'Source sync failed',
-  },
-  {
-    id: 'bot_3d6ef',
-    name: 'Onboarding Helper',
-    description: 'Guides new accounts through workspace setup',
-    initials: 'OH',
-    status: 'Published',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'OH' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Production',
-    knowledge: '5 sources · 842 chunks',
-    conversations: 6120,
-    version: 'v3',
-    resolutionRate: '89.6%',
-    feedbackRate: '91.2%',
-    estimatedCost: '$18.40',
-    errorRate: '0.06%',
-    lastPublished: 'Yesterday',
-    updatedBy: 'Rae Kim',
-    updatedAt: '3h ago',
-  },
-  {
-    id: 'bot_8b440',
-    name: 'Churn Risk Triage',
-    description: 'Paused experiment for account health reviews',
-    initials: 'CR',
-    status: 'Disabled',
-    behaviorConfig: { ...defaultBotBehaviorConfig, initials: 'CR' },
-    modelConfig: defaultBotModelConfig,
-    environment: 'Sandbox',
-    knowledge: '1 source · 96 chunks',
-    conversations: 288,
-    version: 'v1',
-    resolutionRate: '68.0%',
-    feedbackRate: '71.5%',
-    estimatedCost: '$1.90',
-    errorRate: '0.00%',
-    lastPublished: 'Last month',
-    updatedBy: 'Jamie Doyle',
-    updatedAt: '1d ago',
-  },
-];
+// Real bot rows come from loadBots() below on mount; this starts empty
+// rather than showing fake bots (e.g. "Support Assistant · 16,204
+// conversations") in the brief window before that fetch resolves.
+const botRows: BotRow[] = [];
 
 const botFilters: BotFilter[] = ['All', 'Published', 'Draft', 'Processing', 'Error', 'Disabled'];
 
@@ -611,12 +471,6 @@ export function getCreatedBotDashboardRoute(botId: string): DashboardRouteState 
     selectedBotConfigurationPanel: 'identity',
   };
 }
-
-const botKnowledgeHealth = [
-  { label: 'Indexed chunks', value: '1,284', progress: 92 },
-  { label: 'Citation coverage', value: '96.2%', progress: 96 },
-  { label: 'Stale content risk', value: 'Low', progress: 18 },
-];
 
 type BotConfiguration = {
   name: string;
@@ -940,6 +794,24 @@ function formatCount(value: number) {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
+function formatPercent(ratio: number) {
+  return `${(ratio * 100).toFixed(1)}%`;
+}
+
+function formatKnowledgeSummary(stats: BotStats) {
+  if (stats.knowledgeSourceCount === 0) {
+    return 'No sources connected';
+  }
+
+  const sourceLabel = `${formatCount(stats.knowledgeSourceCount)} source${stats.knowledgeSourceCount === 1 ? '' : 's'}`;
+
+  if (stats.readyKnowledgeSourceCount < stats.knowledgeSourceCount) {
+    return `${sourceLabel} · ${formatCount(stats.knowledgeSourceCount - stats.readyKnowledgeSourceCount)} still processing`;
+  }
+
+  return `${sourceLabel} · ${formatCount(stats.totalIndexedChunks)} chunks`;
+}
+
 function BotsEmptyState({ onCreateBot }: { onCreateBot: () => void }) {
   return (
     <EmptyState
@@ -972,21 +844,40 @@ function BotAvatar({ bot, size = 'md' }: { bot: BotRow; size?: 'sm' | 'md' | 'lg
 }
 
 function BotDetailOverview({ bot }: { bot: BotRow }) {
+  const { stats } = bot;
   const detailMetrics = [
+    { label: 'Conversations', value: formatCount(stats.conversationCount) },
+    { label: 'Messages', value: formatCount(stats.messageCount) },
     {
-      label: 'Conversations',
-      value: formatCount(bot.conversations),
-      trend: '+12.4%',
-      tone: 'success' as const,
+      label: 'Feedback',
+      value: stats.positiveFeedbackRate !== null ? formatPercent(stats.positiveFeedbackRate) : 'No feedback yet',
+      tone: 'primary' as const,
     },
-    { label: 'Resolution', value: bot.resolutionRate, trend: '+2.1 pt', tone: 'success' as const },
-    { label: 'Feedback', value: bot.feedbackRate, trend: '684 votes', tone: 'primary' as const },
-    { label: 'AI cost', value: bot.estimatedCost, trend: '68% budget', tone: 'warning' as const },
+    { label: 'AI cost', value: `$${stats.estCostUsd.toFixed(2)}`, tone: 'warning' as const },
     {
-      label: 'Errors',
-      value: bot.errorRate,
-      trend: bot.status === 'Error' ? 'review' : 'stable',
-      tone: bot.status === 'Error' ? ('danger' as const) : ('success' as const),
+      label: 'Knowledge sources',
+      value: `${formatCount(stats.readyKnowledgeSourceCount)}/${formatCount(stats.knowledgeSourceCount)} ready`,
+      tone: stats.knowledgeSourceCount > 0 && stats.readyKnowledgeSourceCount < stats.knowledgeSourceCount
+        ? ('warning' as const)
+        : ('success' as const),
+    },
+  ];
+
+  const guardrails = [
+    {
+      label: 'Prompt guardrails',
+      detail: bot.behaviorConfig.strictKnowledge ? 'Strict sources only' : 'Flexible answers',
+      on: bot.behaviorConfig.strictKnowledge,
+    },
+    {
+      label: 'Injection protection',
+      detail: bot.behaviorConfig.promptInjectionProtection ? 'Filtering suspicious prompts' : 'Not filtering',
+      on: bot.behaviorConfig.promptInjectionProtection,
+    },
+    {
+      label: 'Human handoff',
+      detail: bot.behaviorConfig.handoffBehavior,
+      on: bot.behaviorConfig.humanHandoff,
     },
   ];
 
@@ -1002,16 +893,31 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
         <Panel>
           <PanelHeader>
             <PanelTitle>Knowledge health</PanelTitle>
-            <PanelDescription>{bot.knowledge} powering grounded answers.</PanelDescription>
+            <PanelDescription>{formatKnowledgeSummary(stats)} powering grounded answers.</PanelDescription>
           </PanelHeader>
           <PanelBody className="grid gap-4">
-            {botKnowledgeHealth.map((item) => (
-              <ProgressBar
-                key={item.label}
-                value={item.progress}
-                label={`${item.label} · ${item.value}`}
-              />
-            ))}
+            <ProgressBar
+              value={stats.citationCoverage !== null ? Math.round(stats.citationCoverage * 100) : 0}
+              label={
+                stats.citationCoverage !== null
+                  ? `Citation coverage · ${formatPercent(stats.citationCoverage)}`
+                  : 'Citation coverage · not enough replies yet'
+              }
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-md border border-border bg-surface-raised p-3">
+                <p className="text-xs text-muted-foreground">Knowledge sources</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {stats.readyKnowledgeSourceCount}/{stats.knowledgeSourceCount} ready
+                </p>
+              </div>
+              <div className="rounded-md border border-border bg-surface-raised p-3">
+                <p className="text-xs text-muted-foreground">Indexed chunks</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {formatCount(stats.totalIndexedChunks)}
+                </p>
+              </div>
+            </div>
           </PanelBody>
         </Panel>
 
@@ -1019,22 +925,20 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
           <PanelHeader>
             <PanelTitle>Production readiness</PanelTitle>
             <PanelDescription>
-              Guardrails, routing, and monitored channels for this bot.
+              Guardrails configured for this bot right now.
             </PanelDescription>
           </PanelHeader>
           <PanelBody>
             <div className="grid gap-3 sm:grid-cols-3">
-              {(
-                [
-                  ['Prompt guardrails', 'Strict sources only', 'Ready'],
-                  ['Escalation routing', 'Zendesk handoff', 'Live'],
-                  ['Fallback policy', 'Human review queue', 'Ready'],
-                ] as const
-              ).map(([label, detail, status]) => (
+              {guardrails.map(({ label, detail, on }) => (
                 <div key={label} className="rounded-md border border-border bg-surface-raised p-4">
                   <p className="text-xs text-muted-foreground">{label}</p>
                   <p className="mt-2 text-sm font-semibold text-foreground">{detail}</p>
-                  <StatusBadge status={status} className="mt-3" />
+                  <StatusBadge
+                    status={on ? 'On' : 'Off'}
+                    tone={on ? 'success' : 'neutral'}
+                    className="mt-3"
+                  />
                 </div>
               ))}
             </div>
@@ -4254,7 +4158,7 @@ function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: stri
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
           <span className="shrink-0">Conversations</span>
-          <span className="font-mono text-foreground">{formatCount(bot.conversations)}</span>
+          <span className="font-mono text-foreground">{formatCount(bot.stats.conversationCount)}</span>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
           <span className="shrink-0">Model key</span>
@@ -4558,7 +4462,7 @@ function BotsListScreen({
         }
 
         if (sortBy === 'conversations') {
-          return second.conversations - first.conversations;
+          return second.stats.conversationCount - first.stats.conversationCount;
         }
 
         return bots.indexOf(first) - bots.indexOf(second);
@@ -4711,7 +4615,7 @@ function BotsListScreen({
                             {bot.id} · {bot.description}
                           </p>
                           <p className="mt-1 break-words text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
-                            {bot.knowledge} · Updated {bot.updatedAt} by {bot.updatedBy}
+                            {formatKnowledgeSummary(bot.stats)} · Updated {bot.updatedAt} by {bot.updatedBy}
                           </p>
                         </div>
                       </div>
@@ -4741,7 +4645,7 @@ function BotsListScreen({
                       </p>
                     </TableCell>
                     <TableCell className="px-3 text-right font-mono text-foreground sm:px-4">
-                      {formatCount(bot.conversations)}
+                      {formatCount(bot.stats.conversationCount)}
                     </TableCell>
                     <TableCell className="hidden whitespace-normal px-3 2xl:table-cell sm:px-4">
                       {bot.lastPublished}
@@ -5863,21 +5767,10 @@ export function AppShell() {
         return [updatedRow, ...currentBots];
       }
 
-      return currentBots.map((bot) =>
-        bot.id === updatedRow.id
-          ? {
-              ...bot,
-              ...updatedRow,
-              conversations: bot.conversations,
-              knowledge: bot.knowledge,
-              resolutionRate: bot.resolutionRate,
-              feedbackRate: bot.feedbackRate,
-              estimatedCost: bot.estimatedCost,
-              errorRate: bot.errorRate,
-              updatedBy: bot.updatedBy,
-            }
-          : bot,
-      );
+      // updatedRow.stats is freshly computed by the API on every
+      // create/update/publish response — no need to carry over the old
+      // bot's stats like earlier fields once did.
+      return currentBots.map((bot) => (bot.id === updatedRow.id ? { ...bot, ...updatedRow } : bot));
     });
   }
 

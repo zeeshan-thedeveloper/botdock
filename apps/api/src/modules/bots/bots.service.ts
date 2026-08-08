@@ -13,12 +13,22 @@ import type {
   BotRetrievalMode,
   BotResponseLength,
   BotsResponse,
+  BotStats,
   CreateBotInput,
   ModelProvider,
   UpdateBotInput,
 } from '@botdock/contracts';
 import { Prisma } from '@botdock/database';
 import { PrismaService } from '../database/prisma.service.js';
+
+type MessageAggregateRow = {
+  botId: string;
+  messageCount: number;
+  assistantMessageCount: number;
+  citedMessageCount: number;
+  ratedMessageCount: number;
+  positiveMessageCount: number;
+};
 
 type StoredBot = {
   id: string;
@@ -99,7 +109,12 @@ export class BotsService {
       select: this.botSelect(),
     });
 
-    return { bots: bots.map((bot) => this.toResponse(bot)) };
+    const stats = await this.computeStats(
+      organisationId,
+      bots.map((bot) => bot.id),
+    );
+
+    return { bots: bots.map((bot) => this.toResponse(bot, stats.get(bot.id) ?? this.zeroStats())) };
   }
 
   async createBot(
@@ -131,7 +146,7 @@ export class BotsService {
       select: this.botSelect(),
     });
 
-    return this.toResponse(bot);
+    return this.toResponse(bot, this.zeroStats());
   }
 
   async updateBot(
@@ -168,7 +183,8 @@ export class BotsService {
       select: this.botSelect(),
     });
 
-    return this.toResponse(bot);
+    const stats = (await this.computeStats(organisationId, [botId])).get(botId) ?? this.zeroStats();
+    return this.toResponse(bot, stats);
   }
 
   async publishBot(organisationId: string, userId: string, botId: string): Promise<BotResponse> {
@@ -229,7 +245,8 @@ export class BotsService {
       });
     });
 
-    return this.toResponse(updatedBot);
+    const stats = (await this.computeStats(organisationId, [botId])).get(botId) ?? this.zeroStats();
+    return this.toResponse(updatedBot, stats);
   }
 
   private toConfigSnapshot(bot: StoredBot): Prisma.InputJsonValue {
@@ -325,7 +342,7 @@ export class BotsService {
     };
   }
 
-  private toResponse(bot: StoredBot): BotResponse {
+  private toResponse(bot: StoredBot, stats: BotStats): BotResponse {
     const activeCredential =
       bot.providerCredential?.status === 'ACTIVE' ? bot.providerCredential : null;
 
@@ -347,9 +364,103 @@ export class BotsService {
         maxSources: bot.maxSources,
         citationStyle: this.toCitationStyle(bot.citationStyle),
       },
+      stats,
       createdAt: bot.createdAt.toISOString(),
       updatedAt: bot.updatedAt.toISOString(),
     };
+  }
+
+  private zeroStats(): BotStats {
+    return {
+      conversationCount: 0,
+      messageCount: 0,
+      estCostUsd: 0,
+      knowledgeSourceCount: 0,
+      readyKnowledgeSourceCount: 0,
+      totalIndexedChunks: 0,
+      citationCoverage: null,
+      positiveFeedbackRate: null,
+    };
+  }
+
+  /** Batched, real aggregates — never a fabricated fallback number. */
+  private async computeStats(organisationId: string, botIds: string[]): Promise<Map<string, BotStats>> {
+    const stats = new Map<string, BotStats>();
+    if (botIds.length === 0) {
+      return stats;
+    }
+
+    const [conversationCounts, costSums, knowledgeGroups, messageAggregates] = await Promise.all([
+      this.prisma.conversation.groupBy({
+        by: ['botId'],
+        where: { organisationId, botId: { in: botIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.usageRecord.groupBy({
+        by: ['botId'],
+        where: { organisationId, botId: { in: botIds } },
+        _sum: { estCostUsd: true },
+      }),
+      this.prisma.knowledgeSource.groupBy({
+        by: ['botId', 'status'],
+        where: { organisationId, botId: { in: botIds } },
+        _count: { _all: true },
+        _sum: { chunkCount: true },
+      }),
+      this.prisma.$queryRaw<MessageAggregateRow[]>`
+        SELECT
+          c."botId" AS "botId",
+          COUNT(*)::int AS "messageCount",
+          COUNT(*) FILTER (WHERE m.role = 'ASSISTANT')::int AS "assistantMessageCount",
+          COUNT(*) FILTER (
+            WHERE m.role = 'ASSISTANT' AND EXISTS (
+              SELECT 1 FROM "message_sources" ms WHERE ms."messageId" = m.id
+            )
+          )::int AS "citedMessageCount",
+          COUNT(*) FILTER (WHERE m.feedback IS NOT NULL)::int AS "ratedMessageCount",
+          COUNT(*) FILTER (WHERE m.feedback = 'UP')::int AS "positiveMessageCount"
+        FROM "messages" m
+        JOIN "conversations" c ON c.id = m."conversationId"
+        WHERE c."organisationId" = ${organisationId} AND c."botId" IN (${Prisma.join(botIds)})
+        GROUP BY c."botId"
+      `,
+    ]);
+
+    for (const botId of botIds) {
+      stats.set(botId, this.zeroStats());
+    }
+
+    for (const row of conversationCounts) {
+      const entry = stats.get(row.botId);
+      if (entry) entry.conversationCount = row._count._all;
+    }
+
+    for (const row of costSums) {
+      const entry = stats.get(row.botId);
+      if (entry) entry.estCostUsd = Number(row._sum.estCostUsd ?? 0);
+    }
+
+    for (const row of knowledgeGroups) {
+      const entry = stats.get(row.botId);
+      if (!entry) continue;
+      entry.knowledgeSourceCount += row._count._all;
+      if (row.status === 'READY') {
+        entry.readyKnowledgeSourceCount += row._count._all;
+        entry.totalIndexedChunks += row._sum.chunkCount ?? 0;
+      }
+    }
+
+    for (const row of messageAggregates) {
+      const entry = stats.get(row.botId);
+      if (!entry) continue;
+      entry.messageCount = row.messageCount;
+      entry.citationCoverage =
+        row.assistantMessageCount > 0 ? row.citedMessageCount / row.assistantMessageCount : null;
+      entry.positiveFeedbackRate =
+        row.ratedMessageCount > 0 ? row.positiveMessageCount / row.ratedMessageCount : null;
+    }
+
+    return stats;
   }
 
   private toBehaviorConfig(bot: StoredBot): BotBehaviorConfig {

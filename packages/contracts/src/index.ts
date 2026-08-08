@@ -172,6 +172,26 @@ export const botBehaviorConfigSchema = z.object({
 
 export type BotBehaviorConfig = z.infer<typeof botBehaviorConfigSchema>;
 
+/**
+ * Real, computed-from-data metrics only — no field here is allowed to be a
+ * value with no underlying data source. `citationCoverage` and
+ * `positiveFeedbackRate` are `null` (not `0`) when there's no relevant
+ * denominator yet (no assistant messages, or no feedback given at all), so
+ * the UI can render "not enough data" instead of a misleadingly precise 0%.
+ */
+export const botStatsSchema = z.object({
+  conversationCount: z.number().int().min(0),
+  messageCount: z.number().int().min(0),
+  estCostUsd: z.number().min(0),
+  knowledgeSourceCount: z.number().int().min(0),
+  readyKnowledgeSourceCount: z.number().int().min(0),
+  totalIndexedChunks: z.number().int().min(0),
+  citationCoverage: z.number().min(0).max(1).nullable(),
+  positiveFeedbackRate: z.number().min(0).max(1).nullable(),
+});
+
+export type BotStats = z.infer<typeof botStatsSchema>;
+
 export const botSchema = z.object({
   id: z.string(),
   organisationId: z.string(),
@@ -180,6 +200,7 @@ export const botSchema = z.object({
   status: botStatusSchema,
   modelConfig: botModelConfigSchema,
   behaviorConfig: botBehaviorConfigSchema,
+  stats: botStatsSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

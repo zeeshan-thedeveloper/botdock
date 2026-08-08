@@ -25,6 +25,16 @@ function createPrismaMock() {
     providerCredential: {
       findFirst: vi.fn(),
     },
+    conversation: {
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
+    usageRecord: {
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
+    knowledgeSource: {
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
+    $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(),
   };
 
@@ -34,6 +44,17 @@ function createPrismaMock() {
 
   return prisma;
 }
+
+const zeroStats = {
+  conversationCount: 0,
+  messageCount: 0,
+  estCostUsd: 0,
+  knowledgeSourceCount: 0,
+  readyKnowledgeSourceCount: 0,
+  totalIndexedChunks: 0,
+  citationCoverage: null,
+  positiveFeedbackRate: null,
+};
 
 describe('BotsService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
@@ -115,11 +136,117 @@ describe('BotsService', () => {
             maxSources: 4,
             citationStyle: 'footer_source_list',
           },
+          stats: zeroStats,
           createdAt: now.toISOString(),
           updatedAt: now.toISOString(),
         },
       ],
     });
+  });
+
+  it('computes real per-bot stats from conversations, usage, knowledge, and message aggregates', async () => {
+    prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: 'bot-1',
+        organisationId: 'org-1',
+        name: 'Docs Assistant',
+        description: null,
+        status: 'PUBLISHED',
+        initials: 'DA',
+        welcomeMessage: 'Welcome.',
+        instructions: 'Answer from docs only.',
+        tone: 'Concise and technical',
+        handoffBehavior: 'Escalate after low-confidence answer',
+        providerCredentialId: null,
+        model: 'gpt-4o-mini',
+        temperature: 0.25,
+        responseLength: 'brief',
+        retrievalMode: 'semantic',
+        maxSources: 4,
+        citationStyle: 'footer_source_list',
+        widgetTheme: 'Dark system default',
+        widgetPosition: 'Bottom right',
+        strictKnowledge: true,
+        promptInjectionProtection: true,
+        piiRedaction: true,
+        collectFeedback: true,
+        humanHandoff: false,
+        createdAt: now,
+        updatedAt: now,
+        providerCredential: null,
+      },
+    ]);
+    prisma.conversation.groupBy.mockResolvedValue([{ botId: 'bot-1', _count: { _all: 5 } }]);
+    prisma.usageRecord.groupBy.mockResolvedValue([
+      { botId: 'bot-1', _sum: { estCostUsd: { toString: () => '1.234' } } },
+    ]);
+    prisma.knowledgeSource.groupBy.mockResolvedValue([
+      { botId: 'bot-1', status: 'READY', _count: { _all: 2 }, _sum: { chunkCount: 40 } },
+      { botId: 'bot-1', status: 'FAILED', _count: { _all: 1 }, _sum: { chunkCount: 0 } },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        botId: 'bot-1',
+        messageCount: 12,
+        assistantMessageCount: 6,
+        citedMessageCount: 3,
+        ratedMessageCount: 4,
+        positiveMessageCount: 3,
+      },
+    ]);
+
+    const result = await service.listBots('org-1', 'user-1');
+
+    expect(result.bots[0]?.stats).toEqual({
+      conversationCount: 5,
+      messageCount: 12,
+      estCostUsd: 1.234,
+      knowledgeSourceCount: 3,
+      readyKnowledgeSourceCount: 2,
+      totalIndexedChunks: 40,
+      citationCoverage: 0.5,
+      positiveFeedbackRate: 0.75,
+    });
+  });
+
+  it('reports null citation coverage and feedback rate when there is nothing to divide by', async () => {
+    prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    prisma.bot.findMany.mockResolvedValue([
+      {
+        id: 'bot-1',
+        organisationId: 'org-1',
+        name: 'Fresh Bot',
+        description: null,
+        status: 'DRAFT',
+        initials: 'FB',
+        welcomeMessage: 'Welcome.',
+        instructions: 'Answer from docs only.',
+        tone: 'Concise and technical',
+        handoffBehavior: 'Escalate after low-confidence answer',
+        providerCredentialId: null,
+        model: 'gpt-4o-mini',
+        temperature: 0.25,
+        responseLength: 'brief',
+        retrievalMode: 'semantic',
+        maxSources: 4,
+        citationStyle: 'footer_source_list',
+        widgetTheme: 'Dark system default',
+        widgetPosition: 'Bottom right',
+        strictKnowledge: true,
+        promptInjectionProtection: true,
+        piiRedaction: true,
+        collectFeedback: true,
+        humanHandoff: false,
+        createdAt: now,
+        updatedAt: now,
+        providerCredential: null,
+      },
+    ]);
+
+    const result = await service.listBots('org-1', 'user-1');
+
+    expect(result.bots[0]?.stats).toEqual(zeroStats);
   });
 
   it('rejects bot model configuration that references a missing or inactive credential', async () => {
