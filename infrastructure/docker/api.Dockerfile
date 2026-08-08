@@ -8,6 +8,7 @@ WORKDIR /app
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/api/package.json apps/api/package.json
+COPY packages/ai-core/package.json packages/ai-core/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/logger/package.json packages/logger/package.json
@@ -23,6 +24,7 @@ RUN pnpm --filter @botdock/database build
 RUN pnpm --filter @botdock/config build
 RUN pnpm --filter @botdock/contracts build
 RUN pnpm --filter @botdock/logger build
+RUN pnpm --filter @botdock/ai-core build
 RUN pnpm --filter @botdock/api build
 
 FROM base AS runner
