@@ -3,15 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
+  allowedDomainSchema,
+  allowedDomainsResponseSchema,
   authSessionResponseSchema,
   botSchema,
   botsResponseSchema,
   chatStreamEventSchema,
   conversationDetailResponseSchema,
   conversationsListResponseSchema,
+  deploymentInfoSchema,
   knowledgeSourcesResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
+  type AllowedDomain,
   type AuthSessionUser,
   type Bot as BotRecord,
   type BotBehaviorConfig,
@@ -24,6 +28,7 @@ import {
   type ChatStreamEvent,
   type ConversationDetailResponse,
   type ConversationSummary,
+  type DeploymentInfo,
   type KnowledgeSource,
   type KnowledgeSourceType,
   type ModelProvider,
@@ -76,6 +81,7 @@ import {
 import {
   Badge,
   Button,
+  CodeBlock,
   DataTable,
   EmptyState,
   Field,
@@ -1137,6 +1143,7 @@ function BotDetailConfiguration({
   const [didLoadCredentials, setDidLoadCredentials] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<ProviderCredentialsMessage | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const savedConfigRef = useRef(savedConfig);
   const activeBotIdRef = useRef(bot.id);
   const hasUnsavedChanges = !areBotConfigurationsEqual(config, savedConfig);
@@ -1280,13 +1287,13 @@ function BotDetailConfiguration({
     );
   }
 
-  async function saveConfiguration() {
+  async function saveConfiguration(): Promise<boolean> {
     if (!workspaceOrganisationId.trim()) {
       setSaveMessage({
         tone: 'warning',
         text: 'Bot configuration needs a configured workspace organisation id.',
       });
-      return;
+      return false;
     }
 
     setIsSaving(true);
@@ -1339,13 +1346,58 @@ function BotDetailConfiguration({
       setSavedConfig(updatedConfig);
       setConfig(updatedConfig);
       setSaveMessage({ tone: 'success', text: 'Draft configuration saved.' });
+      return true;
     } catch (error) {
       setSaveMessage({
         tone: 'danger',
         text: error instanceof Error ? error.message : 'Could not save bot configuration.',
       });
+      return false;
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function publishBot() {
+    if (!workspaceOrganisationId.trim()) {
+      setSaveMessage({
+        tone: 'warning',
+        text: 'Bot configuration needs a configured workspace organisation id.',
+      });
+      return;
+    }
+
+    // Publish snapshots the bot's last-saved draft, not in-memory unsaved
+    // edits — save first so a click on "Publish changes" always publishes
+    // what's currently on screen, not stale data.
+    if (hasUnsavedChanges) {
+      const saved = await saveConfiguration();
+      if (!saved) return;
+    }
+
+    setIsPublishing(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}/publish`, apiBaseUrl),
+        { method: 'POST', credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const updatedBot = botSchema.parse(await response.json());
+      onBotUpdated(updatedBot);
+      setSaveMessage({ tone: 'success', text: 'Published. The live widget now serves this version.' });
+    } catch (error) {
+      setSaveMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : 'Could not publish this bot.',
+      });
+    } finally {
+      setIsPublishing(false);
     }
   }
 
@@ -1765,9 +1817,14 @@ function BotDetailConfiguration({
               <Button
                 variant="secondary"
                 size="md"
-                disabled={!selectedCredential || isLoadingCredentials}
+                disabled={!selectedCredential || isLoadingCredentials || isSaving || isPublishing}
+                onClick={() => void publishBot()}
               >
-                <Rocket className="size-4" aria-hidden="true" />
+                {isPublishing ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Rocket className="size-4" aria-hidden="true" />
+                )}
                 Publish changes
               </Button>
               <Button
@@ -3712,6 +3769,403 @@ function BotDetailConversations({ botId }: { botId: string }) {
   return <ConversationsScreen lockedBotId={botId} />;
 }
 
+function AllowedDomainRow({
+  domain,
+  onDelete,
+}: {
+  domain: AllowedDomain;
+  onDelete: (domain: AllowedDomain) => void;
+}) {
+  return (
+    <TableRow>
+      <TableCell className="min-w-0 truncate font-mono text-foreground">{domain.pattern}</TableCell>
+      <TableCell className="text-muted-foreground">{formatTimestamp(domain.createdAt)}</TableCell>
+      <TableCell className="text-right">
+        <IconButton
+          aria-label={`Remove ${domain.pattern}`}
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(domain)}
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </IconButton>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function DeleteAllowedDomainModal({
+  pattern,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  pattern: string;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-allowed-domain-title"
+        className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+            <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="delete-allowed-domain-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Remove &ldquo;{pattern}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              The widget will stop responding to requests from this domain immediately.
+            </p>
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isDeleting} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" size="md" disabled={isDeleting} onClick={onConfirm}>
+            {isDeleting ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="size-4" aria-hidden="true" />
+            )}
+            Remove domain
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BotDetailDeployments({ bot }: { bot: BotRow }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const buildUrl = useCallback(
+    (suffix = '') => new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}${suffix}`, apiBaseUrl),
+    [apiBaseUrl, bot.id],
+  );
+
+  const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
+  const [isLoadingDeployment, setIsLoadingDeployment] = useState(true);
+  const [deploymentError, setDeploymentError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [domains, setDomains] = useState<AllowedDomain[]>([]);
+  const [isLoadingDomains, setIsLoadingDomains] = useState(true);
+  const [domainsError, setDomainsError] = useState<string | null>(null);
+  const [newPattern, setNewPattern] = useState('');
+  const [isAddingDomain, setIsAddingDomain] = useState(false);
+  const [addDomainError, setAddDomainError] = useState<string | null>(null);
+  const [domainPendingDelete, setDomainPendingDelete] = useState<AllowedDomain | null>(null);
+  const [isDeletingDomain, setIsDeletingDomain] = useState(false);
+  const [deleteDomainError, setDeleteDomainError] = useState<string | null>(null);
+
+  const loadDeployment = useCallback(async () => {
+    setIsLoadingDeployment(true);
+    setDeploymentError(null);
+    try {
+      const response = await fetch(buildUrl('/deployment'), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDeployment(deploymentInfoSchema.parse(await response.json()));
+    } catch (error) {
+      setDeploymentError(error instanceof Error ? error.message : 'Could not load deployment status.');
+    } finally {
+      setIsLoadingDeployment(false);
+    }
+  }, [buildUrl]);
+
+  const loadDomains = useCallback(async () => {
+    setIsLoadingDomains(true);
+    setDomainsError(null);
+    try {
+      const response = await fetch(buildUrl('/allowed-domains'), { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDomains(allowedDomainsResponseSchema.parse(await response.json()).domains);
+    } catch (error) {
+      setDomainsError(error instanceof Error ? error.message : 'Could not load allowed domains.');
+    } finally {
+      setIsLoadingDomains(false);
+    }
+  }, [buildUrl]);
+
+  useEffect(() => {
+    // bot.status is in the dependency list (unused directly) so a publish
+    // triggered elsewhere (the header/config-sidebar Publish actions, which
+    // don't remount this component) still refetches deployment info here —
+    // loadDeployment's own identity doesn't change just because the bot's
+    // status did.
+    void loadDeployment();
+  }, [loadDeployment, bot.status]);
+
+  useEffect(() => {
+    void loadDomains();
+  }, [loadDomains]);
+
+  async function handleAddDomain(event: FormEvent) {
+    event.preventDefault();
+    const pattern = newPattern.trim();
+    if (!pattern) return;
+
+    setIsAddingDomain(true);
+    setAddDomainError(null);
+    try {
+      const response = await fetch(buildUrl('/allowed-domains'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pattern }),
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      const created = allowedDomainSchema.parse(await response.json());
+      setDomains((current) => [created, ...current.filter((domain) => domain.id !== created.id)]);
+      setNewPattern('');
+    } catch (error) {
+      setAddDomainError(error instanceof Error ? error.message : 'Could not add this domain.');
+    } finally {
+      setIsAddingDomain(false);
+    }
+  }
+
+  async function handleDeleteDomain() {
+    if (!domainPendingDelete) return;
+
+    setIsDeletingDomain(true);
+    setDeleteDomainError(null);
+    try {
+      const response = await fetch(buildUrl(`/allowed-domains/${domainPendingDelete.id}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setDomains((current) => current.filter((domain) => domain.id !== domainPendingDelete.id));
+      setDomainPendingDelete(null);
+    } catch (error) {
+      setDeleteDomainError(error instanceof Error ? error.message : 'Could not remove this domain.');
+    } finally {
+      setIsDeletingDomain(false);
+    }
+  }
+
+  async function copySnippet() {
+    if (!deployment?.embedSnippet) return;
+    try {
+      await navigator.clipboard.writeText(deployment.embedSnippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard permission can be denied; the snippet is still selectable text in the CodeBlock below.
+    }
+  }
+
+  return (
+    <div className="grid min-w-0 gap-4">
+      <Panel className="min-w-0">
+        <PanelHeader>
+          <PanelTitle>Production deployment</PanelTitle>
+          <PanelDescription>Where this bot is actually live for visitors.</PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          {deploymentError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{deploymentError}</span>
+            </div>
+          ) : null}
+
+          {isLoadingDeployment ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading deployment status...
+            </div>
+          ) : deployment ? (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                {deployment.status === 'active' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-success/40 bg-success-muted px-2.5 py-1 text-xs font-medium text-success">
+                    <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                    Active
+                  </span>
+                ) : deployment.status === 'disabled' ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    <Square className="size-3.5" aria-hidden="true" />
+                    Disabled
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                    <AlertCircle className="size-3.5" aria-hidden="true" />
+                    Not published yet
+                  </span>
+                )}
+                {deployment.currentVersionNumber !== null ? (
+                  <span className="text-sm text-muted-foreground">Version {deployment.currentVersionNumber}</span>
+                ) : null}
+                {deployment.publishedAt ? (
+                  <span className="text-sm text-muted-foreground">
+                    · Published {formatTimestamp(deployment.publishedAt)}
+                  </span>
+                ) : null}
+              </div>
+
+              {deployment.embedSnippet ? (
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-foreground">Embed snippet</p>
+                    <Button variant="secondary" size="sm" onClick={() => void copySnippet()}>
+                      {copied ? (
+                        <CheckCircle2 className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Copy className="size-4" aria-hidden="true" />
+                      )}
+                      {copied ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                  <CodeBlock className="text-xs">{deployment.embedSnippet}</CodeBlock>
+                  <p className="text-xs text-muted-foreground">
+                    Paste this on any site you want the widget to appear on — it will only respond on
+                    domains listed below.
+                  </p>
+                </div>
+              ) : (
+                <EmptyState
+                  title="Not published yet"
+                  description="Publish this bot to create a live deployment and get an embed snippet."
+                />
+              )}
+            </>
+          ) : null}
+        </PanelBody>
+      </Panel>
+
+      <Panel className="min-w-0">
+        <PanelHeader>
+          <PanelTitle>Allowed domains</PanelTitle>
+          <PanelDescription>
+            Only requests from these domains can use this bot&apos;s widget — this protects your
+            connected provider key from being spent by other sites.
+          </PanelDescription>
+        </PanelHeader>
+        <PanelBody className="grid gap-4">
+          <form
+            onSubmit={(event) => void handleAddDomain(event)}
+            className="flex flex-col gap-2 sm:flex-row sm:items-start"
+          >
+            <div className="min-w-0 flex-1">
+              <TextInput
+                aria-label="Domain pattern"
+                value={newPattern}
+                onChange={(event) => setNewPattern(event.target.value)}
+                placeholder="example.com, *.example.com, or localhost"
+              />
+              {addDomainError ? (
+                <p className="mt-1.5 break-words text-xs text-danger">{addDomainError}</p>
+              ) : null}
+            </div>
+            <Button type="submit" size="md" disabled={isAddingDomain || !newPattern.trim()}>
+              {isAddingDomain ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Plus className="size-4" aria-hidden="true" />
+              )}
+              Add domain
+            </Button>
+          </form>
+
+          <div className="grid gap-1.5 rounded-md border border-border bg-surface-raised p-3 text-xs text-muted-foreground">
+            <p>
+              <span className="font-mono text-foreground">example.com</span> — exact host only.
+            </p>
+            <p>
+              <span className="font-mono text-foreground">*.example.com</span> — any subdomain, not the
+              bare domain itself.
+            </p>
+            <p>
+              <span className="font-mono text-foreground">localhost</span> /{' '}
+              <span className="font-mono text-foreground">127.0.0.1</span> — any port, for local
+              development.
+            </p>
+            <p>Requests from domains not listed here are rejected — fail closed, no exceptions.</p>
+          </div>
+
+          {domainsError ? (
+            <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{domainsError}</span>
+            </div>
+          ) : null}
+
+          {isLoadingDomains ? (
+            <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-surface/70 py-10 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Loading allowed domains...
+            </div>
+          ) : domains.length === 0 ? (
+            <EmptyState
+              title="No allowed domains yet"
+              description="Add a domain above before embedding this bot's widget anywhere."
+            />
+          ) : (
+            <DataTable className="w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead className="w-16">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <tbody>
+                {domains.map((domain) => (
+                  <AllowedDomainRow key={domain.id} domain={domain} onDelete={setDomainPendingDelete} />
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </PanelBody>
+      </Panel>
+
+      {domainPendingDelete ? (
+        <DeleteAllowedDomainModal
+          pattern={domainPendingDelete.pattern}
+          isDeleting={isDeletingDomain}
+          error={deleteDomainError}
+          onCancel={() => {
+            setDomainPendingDelete(null);
+            setDeleteDomainError(null);
+          }}
+          onConfirm={() => void handleDeleteDomain()}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
   const tabLabel = botDetailTabs.find((item) => item.id === tab)?.label ?? 'Section';
 
@@ -3792,6 +4246,81 @@ function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: stri
   );
 }
 
+function PublishBotModal({
+  bot,
+  isPublishing,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  bot: BotRow;
+  isPublishing: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const hasActiveCredential = bot.modelConfig.provider !== null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="publish-bot-title"
+        className="w-full max-w-md rounded-lg border border-border bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10">
+            <Rocket className="size-5 text-primary" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="publish-bot-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Publish &ldquo;{bot.name}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Creates a new immutable version from the current saved draft and makes it live in
+              Production. Visitors chatting through the embedded widget start seeing this version
+              immediately.
+            </p>
+            {!hasActiveCredential ? (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-warning/40 bg-warning-muted px-3 py-2 text-xs text-warning">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  No active provider key is selected — publishing will fail until one is chosen in
+                  Configuration.
+                </span>
+              </div>
+            ) : null}
+            {error ? (
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" size="md" disabled={isPublishing} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="md" disabled={isPublishing} onClick={onConfirm}>
+            {isPublishing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Rocket className="size-4" aria-hidden="true" />
+            )}
+            Publish
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BotDetailScreen({
   activeTab,
   activeConfigurationPanel,
@@ -3811,6 +4340,40 @@ function BotDetailScreen({
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
 }) {
+  const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  async function handlePublish() {
+    if (!workspaceOrganisationId.trim()) {
+      setPublishError('Bot configuration needs a configured workspace organisation id.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setPublishError(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}/publish`, apiBaseUrl),
+        { method: 'POST', credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      const updatedBot = botSchema.parse(await response.json());
+      onBotUpdated(updatedBot);
+      setIsPublishModalOpen(false);
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : 'Could not publish this bot.');
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
   return (
     <div className="grid min-w-0 gap-5">
       <div className="grid min-w-0 gap-4 border-b border-border pb-4">
@@ -3858,7 +4421,7 @@ function BotDetailScreen({
               <Play className="size-4" aria-hidden="true" />
               Test
             </Button>
-            <Button size="md">
+            <Button size="md" onClick={() => setIsPublishModalOpen(true)}>
               <Rocket className="size-4" aria-hidden="true" />
               Publish
             </Button>
@@ -3897,12 +4460,27 @@ function BotDetailScreen({
         <BotDetailPlayground bot={bot} onOpenModelProviders={onOpenModelProviders} />
       ) : null}
       {activeTab === 'conversations' ? <BotDetailConversations botId={bot.id} /> : null}
+      {activeTab === 'deployments' ? <BotDetailDeployments bot={bot} /> : null}
       {activeTab !== 'overview' &&
       activeTab !== 'configuration' &&
       activeTab !== 'knowledge' &&
       activeTab !== 'playground' &&
-      activeTab !== 'conversations' ? (
+      activeTab !== 'conversations' &&
+      activeTab !== 'deployments' ? (
         <BotDetailPlaceholder bot={bot} tab={activeTab} />
+      ) : null}
+
+      {isPublishModalOpen ? (
+        <PublishBotModal
+          bot={bot}
+          isPublishing={isPublishing}
+          error={publishError}
+          onCancel={() => {
+            setIsPublishModalOpen(false);
+            setPublishError(null);
+          }}
+          onConfirm={() => void handlePublish()}
+        />
       ) : null}
     </div>
   );
