@@ -8,6 +8,13 @@ vi.mock('ioredis', () => ({
   Redis: vi.fn().mockImplementation(() => ({ disconnect: vi.fn() })),
 }));
 
+const pdfGetText = vi.fn();
+const pdfDestroy = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('pdf-parse', () => ({
+  PDFParse: vi.fn().mockImplementation(() => ({ getText: pdfGetText, destroy: pdfDestroy })),
+}));
+
 const { IngestionWorkerService } = await import('./ingestion-worker.service.js');
 
 function createConfigServiceMock() {
@@ -120,18 +127,43 @@ describe('IngestionWorkerService', () => {
     expect(aiProviderFactory.getEmbeddingProvider).not.toHaveBeenCalled();
   });
 
-  it('marks the source FAILED and rethrows for an unsupported PDF document', async () => {
+  it('extracts real text from a PDF document, ending READY', async () => {
     prisma.knowledgeSource.findFirst.mockResolvedValue({
       ...textSource,
       documents: [
         { id: 'doc-1', fileName: 'policy.pdf', mimeType: 'application/pdf', objectStorageKey: 'key' },
       ],
     });
+    objectStorage.getObject.mockResolvedValue(Buffer.from('%PDF-1.4 fake bytes'));
+    pdfGetText.mockResolvedValue({ text: 'Refunds are available within 30 days.' });
+    const generateEmbeddings = vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]);
+    aiProviderFactory.getEmbeddingProvider.mockResolvedValue({ generateEmbeddings });
+
+    await service.processJob({ organisationId: 'org-1', botId: 'bot-1', knowledgeSourceId: 'source-1' });
+
+    expect(pdfDestroy).toHaveBeenCalled();
+    expect(generateEmbeddings).toHaveBeenCalledWith(['Refunds are available within 30 days.']);
+    expect(prisma.knowledgeSource.update).toHaveBeenCalledWith({
+      where: { id: 'source-1' },
+      data: { status: 'READY', chunkCount: 1, errorMessage: null },
+    });
+  });
+
+  it('marks the source FAILED with a clear reason when a PDF cannot be parsed at all', async () => {
+    prisma.knowledgeSource.findFirst.mockResolvedValue({
+      ...textSource,
+      documents: [
+        { id: 'doc-1', fileName: 'corrupt.pdf', mimeType: 'application/pdf', objectStorageKey: 'key' },
+      ],
+    });
+    objectStorage.getObject.mockResolvedValue(Buffer.from('not a real pdf'));
+    pdfGetText.mockRejectedValue(new Error('Invalid PDF structure'));
 
     await expect(
       service.processJob({ organisationId: 'org-1', botId: 'bot-1', knowledgeSourceId: 'source-1' }),
-    ).rejects.toThrow(/pdf parsing is not supported/i);
+    ).rejects.toThrow(/could not parse this pdf.*invalid pdf structure/i);
 
+    expect(pdfDestroy).toHaveBeenCalled();
     expect(prisma.knowledgeSource.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'source-1' },

@@ -3,6 +3,7 @@ import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from '@ne
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { Worker, type Job } from 'bullmq';
+import { PDFParse } from 'pdf-parse';
 import { AiProviderFactory } from '../ai/ai-provider.factory.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { KNOWLEDGE_INGESTION_QUEUE, type KnowledgeIngestionJobData } from './ingestion-queue.service.js';
@@ -149,14 +150,31 @@ export class IngestionWorkerService implements OnModuleInit, OnModuleDestroy {
       throw new Error('Document has no stored content.');
     }
 
-    // PDF parsing is deliberately deferred (see PROGRESS.md lean simplifications);
-    // the upload is kept so it can be re-processed once parsing lands.
+    const buffer = await this.objectStorage.getObject(document.objectStorageKey);
+
     if (document.mimeType === 'application/pdf') {
-      throw new Error('PDF parsing is not supported yet; upload a text or markdown file instead.');
+      return this.extractPdfText(buffer);
     }
 
-    const buffer = await this.objectStorage.getObject(document.objectStorageKey);
     return buffer.toString('utf8');
+  }
+
+  private async extractPdfText(buffer: Buffer): Promise<string> {
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const result = await parser.getText();
+      return result.text;
+    } catch (error) {
+      // A scanned/image-only PDF isn't an error here — getText() just
+      // returns near-empty text for it, which chunkText() turns into zero
+      // chunks (extractChunks's caller already treats that as a valid
+      // READY-with-nothing-to-embed outcome). An actual throw means pdf.js
+      // couldn't parse the file at all (corrupt, encrypted, unsupported).
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not parse this PDF: ${reason}`);
+    } finally {
+      await parser.destroy();
+    }
   }
 
   private async insertChunk(
