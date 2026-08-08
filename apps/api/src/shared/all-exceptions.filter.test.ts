@@ -1,5 +1,5 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 
 function createHost(request: { url: string }) {
@@ -16,6 +16,10 @@ function createHost(request: { url: string }) {
 }
 
 describe('AllExceptionsFilter', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('passes through extra machine-readable fields from an HttpException body', () => {
     const filter = new AllExceptionsFilter();
     const exception = new HttpException(
@@ -45,6 +49,7 @@ describe('AllExceptionsFilter', () => {
   });
 
   it('maps a non-HttpException to a generic 500 with no leaked details', () => {
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const filter = new AllExceptionsFilter();
     const { host, status, json } = createHost({ url: '/boom' });
 
@@ -54,5 +59,29 @@ describe('AllExceptionsFilter', () => {
     expect(json).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'An unexpected server error occurred.' }),
     );
+  });
+
+  it('logs a server-side trace for a 5xx so an unhandled exception is never silently invisible', () => {
+    const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const filter = new AllExceptionsFilter();
+    const { host } = createHost({ url: '/organisations/org-1/bots/bot-1/knowledge' });
+    const exception = new Error('db connection string leaked');
+
+    filter.catch(exception, host as never);
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/organisations/org-1/bots/bot-1/knowledge'),
+      exception.stack,
+    );
+  });
+
+  it('does not log a server-side trace for an expected 4xx', () => {
+    const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const filter = new AllExceptionsFilter();
+    const { host } = createHost({ url: '/some/path' });
+
+    filter.catch(new HttpException('Not found.', HttpStatus.NOT_FOUND), host as never);
+
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });

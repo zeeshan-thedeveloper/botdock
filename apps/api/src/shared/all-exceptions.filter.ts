@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 const RESERVED_KEYS = new Set(['statusCode', 'message', 'path', 'timestamp', 'error']);
@@ -23,6 +23,8 @@ function extractExtraFields(exception: unknown): Record<string, unknown> {
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AllExceptionsFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
@@ -30,6 +32,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status =
       exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
     const extraFields = extractExtraFields(exception);
+
+    // 4xx are expected/handled cases (validation, auth, not-found); only
+    // 5xx are real bugs worth a server-side trace. Without this, an
+    // unhandled exception silently returns "An unexpected server error
+    // occurred." with zero evidence in the logs — which is exactly what
+    // happened investigating a real report of this in production.
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error(
+        `${request.method} ${request.url} -> ${status}`,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+    }
 
     response.status(status).json({
       statusCode: status,
