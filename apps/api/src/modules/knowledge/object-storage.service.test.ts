@@ -58,6 +58,15 @@ describe('ObjectStorageService', () => {
     expect(sendMock).toHaveBeenCalledTimes(2);
   });
 
+  it('does not throw when the storage endpoint is unreachable at boot (degrades gracefully)', async () => {
+    sendMock
+      .mockRejectedValueOnce(new Error('connect ECONNREFUSED'))
+      .mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+    const service = new ObjectStorageService(createConfigServiceMock() as never);
+
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+  });
+
   it('putObject sends a PutObjectCommand with the given key/body/content-type', async () => {
     sendMock.mockResolvedValueOnce({});
     const service = new ObjectStorageService(createConfigServiceMock() as never);

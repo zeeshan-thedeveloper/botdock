@@ -7,11 +7,12 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
+  private readonly logger = new Logger(ObjectStorageService.name);
   private readonly client: S3Client;
   private readonly bucket: string;
 
@@ -30,9 +31,19 @@ export class ObjectStorageService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
-      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
-    } catch {
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      try {
+        await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      } catch {
+        await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+      }
+    } catch (error) {
+      // Object storage only backs file-upload knowledge sources (pasted
+      // text never touches it) — an unreachable/misconfigured endpoint at
+      // boot shouldn't take down the entire API. putObject/getObject will
+      // still throw normally when a file upload is actually attempted.
+      this.logger.warn(
+        `Could not reach object storage at boot (${error instanceof Error ? error.message : String(error)}). File-upload knowledge sources will fail until MINIO_ENDPOINT is reachable; pasted-text sources are unaffected.`,
+      );
     }
   }
 
