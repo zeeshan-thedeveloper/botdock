@@ -5,6 +5,7 @@ import { AiModule } from './ai/ai.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BotsModule } from './bots/bots.module.js';
 import { ChatModule } from './chat/chat.module.js';
+import { ConversationsModule } from './conversations/conversations.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DeploymentModule } from './deployment/deployment.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -27,6 +28,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
     KnowledgeModule,
     ChatModule,
     DeploymentModule,
+    ConversationsModule,
     HealthModule,
   ],
 })

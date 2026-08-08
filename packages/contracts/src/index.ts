@@ -337,3 +337,64 @@ export const widgetMessageSchema = z.object({
 });
 
 export type WidgetMessageInput = z.infer<typeof widgetMessageSchema>;
+
+export const messageRoleSchema = z.enum(['SYSTEM', 'USER', 'ASSISTANT']);
+
+export type MessageRole = z.infer<typeof messageRoleSchema>;
+
+export const conversationUsageSummarySchema = z.object({
+  promptTokens: z.number().int().min(0),
+  completionTokens: z.number().int().min(0),
+  estCostUsd: z.number().min(0),
+});
+
+export type ConversationUsageSummary = z.infer<typeof conversationUsageSummarySchema>;
+
+export const conversationSummarySchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  botName: z.string(),
+  source: chatConversationSourceSchema,
+  visitorId: z.string().nullable(),
+  messageCount: z.number().int().min(0),
+  lastMessagePreview: z.string().nullable(),
+  lastMessageAt: z.string().datetime(),
+  usage: conversationUsageSummarySchema,
+});
+
+export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+
+export const conversationsListResponseSchema = z.object({
+  conversations: z.array(conversationSummarySchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type ConversationsListResponse = z.infer<typeof conversationsListResponseSchema>;
+
+export const conversationMessageSchema = z.object({
+  id: z.string(),
+  role: messageRoleSchema,
+  content: z.string(),
+  createdAt: z.string().datetime(),
+  model: z.string().nullable(),
+  promptTokens: z.number().int().min(0).nullable(),
+  completionTokens: z.number().int().min(0).nullable(),
+  latencyMs: z.number().min(0).nullable(),
+  estCostUsd: z.number().min(0).nullable(),
+  citations: z.array(chatCitationSourceSchema),
+});
+
+export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
+
+export const conversationDetailResponseSchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  botName: z.string(),
+  source: chatConversationSourceSchema,
+  visitorId: z.string().nullable(),
+  startedAt: z.string().datetime(),
+  lastMessageAt: z.string().datetime(),
+  messages: z.array(conversationMessageSchema),
+});
+
+export type ConversationDetailResponse = z.infer<typeof conversationDetailResponseSchema>;
