@@ -118,7 +118,14 @@ export class DeploymentService {
 
   private buildEmbedSnippet(deploymentId: string): string {
     const apiPublicUrl = this.configService.getOrThrow<string>('API_PUBLIC_URL');
-    return `<script src="${apiPublicUrl}/widget.js" data-deployment-id="${deploymentId}" async></script>`;
+    // /widget.js is a deliberately stable, unversioned public path — the
+    // widget build itself is versioned by path internally
+    // (dist/v1/botdock-widget.js, see apps/widget/vite.config.ts) so the
+    // wire protocol can take a breaking v2 without customers ever touching
+    // this snippet; whatever serves this route maps it to the current
+    // version. `defer` (not `async`) so mountBotDockWidget() can always
+    // rely on document.body existing by the time the script runs.
+    return `<script src="${apiPublicUrl}/widget.js" data-deployment-id="${deploymentId}" defer></script>`;
   }
 
   private async ensureOrganisationMember(organisationId: string, userId: string) {

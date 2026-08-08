@@ -1,4 +1,6 @@
 FROM node:22-alpine AS builder
+ARG VITE_PUBLIC_API_URL=http://localhost:4000
+ENV VITE_PUBLIC_API_URL=$VITE_PUBLIC_API_URL
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable

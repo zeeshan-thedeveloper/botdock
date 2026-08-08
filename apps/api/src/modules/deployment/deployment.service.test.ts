@@ -133,7 +133,7 @@ describe('DeploymentService', () => {
       currentVersionNumber: 3,
       publishedAt: now.toISOString(),
       embedSnippet:
-        '<script src="https://api.botdock.dev/widget.js" data-deployment-id="dep_abc123" async></script>',
+        '<script src="https://api.botdock.dev/widget.js" data-deployment-id="dep_abc123" defer></script>',
     });
   });
 });

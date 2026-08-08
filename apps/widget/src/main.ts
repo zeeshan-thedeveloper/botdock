@@ -20,9 +20,16 @@ const localStorageAdapter: SessionStorageLike = {
   },
 };
 
+// Baked in at build time (see vite.config.ts / widget.Dockerfile's
+// VITE_PUBLIC_API_URL build arg) so a production build always talks to the
+// real API by default. data-api-base-url below is a deliberate, explicit
+// per-embed override for local dev / self-hosting — not something a
+// customer's page could repoint by accident.
+const BUILT_IN_API_BASE_URL = import.meta.env.VITE_PUBLIC_API_URL ?? 'http://localhost:4000';
+
 const DEFAULT_CONFIG: WidgetConfig = {
   deploymentId: '',
-  apiBaseUrl: 'http://localhost:4000',
+  apiBaseUrl: BUILT_IN_API_BASE_URL,
   welcomeMessage: 'Hi, I am the BotDock demo assistant. How can I help?',
   accentColor: '#17201b',
   position: 'bottom-right',

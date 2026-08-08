@@ -9,6 +9,7 @@ services:
       NODE_ENV: production
       PORT: 4000
       DATABASE_URL: postgresql://botdock:botdock@postgres:5432/botdock?schema=public
+      DIRECT_DATABASE_URL: postgresql://botdock:botdock@postgres:5432/botdock?schema=public
       REDIS_URL: redis://redis:6379
       CORS_ORIGINS: http://localhost:3000,http://localhost:5174
       LOG_LEVEL: info
@@ -78,7 +79,7 @@ services:
       context: .
       dockerfile: infrastructure/docker/demo-site.Dockerfile
       args:
-        VITE_BOTDOCK_WIDGET_URL: http://localhost:5173/botdock-widget.js
+        VITE_BOTDOCK_WIDGET_URL: http://localhost:5173/v1/botdock-widget.js
         VITE_BOTDOCK_API_BASE_URL: http://localhost:4000
     image: botdock/demo-site:local
     container_name: botdock-demo-site

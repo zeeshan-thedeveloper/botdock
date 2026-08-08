@@ -23,7 +23,17 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 `;
 
 const widgetScript = document.createElement('script');
-widgetScript.type = 'module';
+// Dev mode points VITE_BOTDOCK_WIDGET_URL at the widget's raw .ts source
+// served by `vite dev`, which needs type="module" to parse import/export.
+// The real embed (and the built IIFE bundle this container serves) is a
+// classic, cross-origin `defer` script — module scripts enforce CORS on
+// cross-origin fetches, which the static nginx config doesn't send, so
+// forcing type="module" here would silently fail to load the real bundle.
+if (widgetScriptUrl.endsWith('.ts')) {
+  widgetScript.type = 'module';
+} else {
+  widgetScript.defer = true;
+}
 widgetScript.src = widgetScriptUrl;
 widgetScript.dataset.deploymentId = deploymentId;
 widgetScript.dataset.apiBaseUrl = apiBaseUrl;
