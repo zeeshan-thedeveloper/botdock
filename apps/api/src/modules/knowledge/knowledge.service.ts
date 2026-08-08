@@ -4,7 +4,9 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type {
   KnowledgeSource as KnowledgeSourceResponse,
@@ -52,6 +54,8 @@ type StoredKnowledgeSource = {
 
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ObjectStorageService) private readonly objectStorage: ObjectStorageService,
@@ -122,7 +126,20 @@ export class KnowledgeService {
         where: { id: source.id },
         data: { status: 'FAILED', errorMessage: 'Failed to store the uploaded content.' },
       });
-      throw error;
+      // The knowledge source row is left in a clean FAILED state above
+      // either way; this just gives the caller something more actionable
+      // than a raw "unexpected server error" when the underlying cause is
+      // object storage being unreachable/misconfigured, not a real bug.
+      // Log the real error here — AllExceptionsFilter logs the
+      // ServiceUnavailableException we throw next, but its stack trace
+      // wouldn't include the actual root cause (e.g. ECONNREFUSED detail).
+      this.logger.error(
+        `Failed to store content for knowledge source ${source.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new ServiceUnavailableException(
+        'Knowledge storage is not available right now. Please try again shortly.',
+      );
     }
 
     await this.ingestionQueue.enqueue({

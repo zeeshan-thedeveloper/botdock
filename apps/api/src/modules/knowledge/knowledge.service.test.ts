@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeService } from './knowledge.service.js';
 
@@ -182,7 +187,7 @@ describe('KnowledgeService', () => {
         { type: 'text', name: 'Refund policy', content: 'Refunds within 30 days.' },
         undefined,
       ),
-    ).rejects.toThrow('minio unreachable');
+    ).rejects.toThrow(ServiceUnavailableException);
 
     expect(prisma.knowledgeSource.update).toHaveBeenCalledWith({
       where: { id: 'source-1' },

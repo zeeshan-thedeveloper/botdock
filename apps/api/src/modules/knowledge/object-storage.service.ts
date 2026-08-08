@@ -37,12 +37,15 @@ export class ObjectStorageService implements OnModuleInit {
         await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
       }
     } catch (error) {
-      // Object storage only backs file-upload knowledge sources (pasted
-      // text never touches it) — an unreachable/misconfigured endpoint at
-      // boot shouldn't take down the entire API. putObject/getObject will
-      // still throw normally when a file upload is actually attempted.
+      // Every knowledge source (pasted text included — KnowledgeService
+      // stores its content through putObject too, not just file uploads)
+      // depends on object storage, but an unreachable/misconfigured
+      // endpoint at boot still shouldn't take down the entire API — every
+      // other feature (auth, bots, chat, publish, conversations) doesn't
+      // need it. putObject/getObject will still throw normally, with a
+      // clear error, when a knowledge source is actually created.
       this.logger.warn(
-        `Could not reach object storage at boot (${error instanceof Error ? error.message : String(error)}). File-upload knowledge sources will fail until MINIO_ENDPOINT is reachable; pasted-text sources are unaffected.`,
+        `Could not reach object storage at boot (${error instanceof Error ? error.message : String(error)}). Knowledge sources (both pasted text and file uploads) will fail until MINIO_ENDPOINT is reachable.`,
       );
     }
   }
