@@ -7,7 +7,7 @@ import {
   type AuthProvider,
   type AuthProviderStatus,
 } from '@botdock/contracts';
-import { Badge, Button, Field, TextInput } from '@botdock/ui';
+import { Badge, Button } from '@botdock/ui';
 import {
   AlertCircle,
   Bot,
@@ -17,8 +17,6 @@ import {
   Globe2,
   KeyRound,
   Link2,
-  LockKeyhole,
-  Mail,
   Rocket,
   Server,
   ShieldCheck,
@@ -47,7 +45,7 @@ const defaultProviderStatuses: AuthProviderStatus[] = [
 ];
 
 const authSessionStorageKey = 'botdock.oauth-session-ready';
-const dashboardPath = '/';
+const dashboardPath = '/app';
 const loginPath = '/login';
 
 function getProviderName(provider: AuthProvider) {
@@ -82,9 +80,6 @@ export function AuthGate({ children }: { children?: ReactNode }) {
   const [authReturnState, setAuthReturnState] = useState<'success' | 'error' | null>(null);
   const [hasCompletedAuth, setHasCompletedAuth] = useState(false);
   const [hasResolvedAuth, setHasResolvedAuth] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showEmailPasswordError, setShowEmailPasswordError] = useState(false);
 
   useEffect(() => {
     const nextAuthReturnState = getAuthReturnState();
@@ -199,16 +194,6 @@ export function AuthGate({ children }: { children?: ReactNode }) {
     }
   }
 
-  function handlePasswordSignIn() {
-    if (!email.trim() || !password.trim()) {
-      setShowEmailPasswordError(true);
-      return;
-    }
-
-    window.localStorage.setItem(authSessionStorageKey, 'true');
-    window.location.assign(dashboardPath);
-  }
-
   if (children && hasResolvedAuth && hasCompletedAuth) {
     return children;
   }
@@ -228,13 +213,12 @@ export function AuthGate({ children }: { children?: ReactNode }) {
             <p className="text-[15px] font-semibold">BotDock</p>
           </div>
 
-          <div className="relative mx-auto flex min-h-[22rem] w-full max-w-[32rem] items-center justify-center xl:min-h-[25rem]">
-            <svg
-              className="absolute inset-x-4 top-16 h-80 text-border"
-              viewBox="0 0 420 320"
-              fill="none"
-              aria-hidden="true"
-            >
+          {/* Purely illustrative — no specific counts/names/statuses, so nothing here can misrepresent real account state. */}
+          <div
+            className="relative mx-auto flex min-h-[22rem] w-full max-w-[32rem] items-center justify-center xl:min-h-[25rem]"
+            aria-hidden="true"
+          >
+            <svg className="absolute inset-x-4 top-16 h-80 text-border" viewBox="0 0 420 320" fill="none">
               <path d="M60 60L210 140L360 50" stroke="currentColor" strokeWidth="1.5" />
               <path d="M210 140L120 260M210 140L320 250" stroke="currentColor" strokeWidth="1.5" />
               <path d="M210 140V230" stroke="hsl(var(--color-primary))" strokeWidth="1.5" />
@@ -242,7 +226,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
 
             <div className="absolute left-0 top-12 w-32 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Globe2 className="size-3.5" aria-hidden="true" />
+                <Globe2 className="size-3.5" />
                 Website
               </div>
               <div className="flex items-center gap-2 text-xs">
@@ -253,41 +237,42 @@ export function AuthGate({ children }: { children?: ReactNode }) {
 
             <div className="absolute right-2 top-9 w-32 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Server className="size-3.5" aria-hidden="true" />
+                <Server className="size-3.5" />
                 REST API
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <span className="size-1.5 rounded-full bg-success" />
-                142 req/day
+                Connected
               </div>
             </div>
 
             <div className="relative z-10 w-40 rounded-xl border border-border bg-surface-raised p-4 shadow-surface-md">
               <div className="mb-3 flex items-center gap-2">
-                <Bot className="size-4 text-primary" aria-hidden="true" />
-                <p className="text-xs font-semibold">Support Assistant</p>
+                <Bot className="size-4 text-primary" />
+                <p className="text-xs font-semibold">AI assistant</p>
               </div>
-              <Badge tone="success">Published v14</Badge>
+              <Badge tone="success">Published</Badge>
             </div>
 
             <div className="absolute bottom-10 left-10 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Braces className="size-3.5" aria-hidden="true" />
+                <Braces className="size-3.5" />
                 Knowledge
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <CheckCircle2 className="size-3.5 text-success" aria-hidden="true" />3 sources ready
+                <CheckCircle2 className="size-3.5 text-success" />
+                Sources ready
               </div>
             </div>
 
             <div className="absolute bottom-14 right-6 w-36 rounded-lg border border-border bg-surface-raised p-3 shadow-surface-sm">
               <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Rocket className="size-3.5" aria-hidden="true" />
+                <Rocket className="size-3.5" />
                 Deploy
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="size-1.5 animate-pulse rounded-full bg-cyan-300" />
-                Staging live
+                <span className="size-1.5 rounded-full bg-success" />
+                Production
               </div>
             </div>
           </div>
@@ -373,83 +358,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
               </p>
             ) : null}
 
-            <div className="my-4 flex items-center gap-3">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-[11px] font-semibold uppercase text-muted-foreground/70">
-                or
-              </span>
-              <div className="h-px flex-1 bg-border" />
-            </div>
-
-            <div className="grid gap-3">
-              <Field label="Email">
-                <div className="relative">
-                  <Mail
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <TextInput
-                    value={email}
-                    onChange={(event) => {
-                      setEmail(event.target.value);
-                      setShowEmailPasswordError(false);
-                    }}
-                    placeholder="you@company.com"
-                    className="pl-9"
-                    autoComplete="email"
-                  />
-                </div>
-              </Field>
-
-              <Field label="Password">
-                <div className="relative">
-                  <LockKeyhole
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <TextInput
-                    type="password"
-                    value={password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      setShowEmailPasswordError(false);
-                    }}
-                    placeholder="••••••••••"
-                    className="pl-9"
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-0 top-[-1.75rem] text-xs font-medium text-primary hover:text-primary/80"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              </Field>
-
-              {showEmailPasswordError ? (
-                <div className="flex items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-4 py-3 text-sm text-danger">
-                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  <span>Enter an email and password to preview this sign-in path.</span>
-                </div>
-              ) : null}
-
-              <Button type="button" size="lg" onClick={handlePasswordSignIn}>
-                Sign in
-              </Button>
-            </div>
-
-            <p className="mt-4 text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{' '}
-              <button type="button" className="font-medium text-primary hover:text-primary/80">
-                Create one
-              </button>
-            </p>
-            <p className="mt-2 text-center text-xs leading-5 text-muted-foreground/70">
-              By continuing you agree to the Terms of Service and Privacy Policy.
-            </p>
-
-            <div className="mt-3 grid gap-1.5 rounded-lg border border-border bg-surface/70 p-3 text-xs leading-5 text-muted-foreground">
+            <div className="mt-5 grid gap-1.5 rounded-lg border border-border bg-surface/70 p-3 text-xs leading-5 text-muted-foreground">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="size-4 text-success" aria-hidden="true" />
                 OAuth redirects stay handled by the BotDock API.

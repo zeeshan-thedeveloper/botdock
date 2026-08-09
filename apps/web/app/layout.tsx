@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'BotDock Dashboard',
-  description: 'Configure, publish, and observe embeddable AI chatbots.',
+  title: 'BotDock',
+  description: 'Configure, deploy, and monitor embeddable AI chatbots.',
 };
 
 const themeScript = `

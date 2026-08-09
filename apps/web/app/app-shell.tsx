@@ -620,7 +620,8 @@ export function writeDashboardRoute(routeState: DashboardRouteState) {
   }
 
   const query = params.toString();
-  window.history.replaceState(null, '', query ? `/?${query}` : '/');
+  const path = window.location.pathname;
+  window.history.replaceState(null, '', query ? `${path}?${query}` : path);
 }
 
 function getApiBaseUrl() {
@@ -867,6 +868,43 @@ function formatKnowledgeSummary(stats: BotStats) {
   return `${sourceLabel} · ${formatCount(stats.totalIndexedChunks)} chunks`;
 }
 
+function csvCell(value: string | number) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportBotsToCsv(bots: BotRow[]) {
+  const header = [
+    'id',
+    'name',
+    'status',
+    'environment',
+    'conversations',
+    'messages',
+    'estCostUsd',
+    'knowledgeSources',
+  ];
+  const rows = bots.map((bot) => [
+    bot.id,
+    bot.name,
+    bot.status,
+    bot.environment,
+    bot.stats.conversationCount,
+    bot.stats.messageCount,
+    bot.stats.estCostUsd.toFixed(2),
+    bot.stats.knowledgeSourceCount,
+  ]);
+  const csv = [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `botdock-bots-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function BotsEmptyState({ onCreateBot }: { onCreateBot: () => void }) {
   return (
     <EmptyState
@@ -1086,12 +1124,14 @@ function BotDetailConfiguration({
   onPanelChange,
   onBotUpdated,
   onOpenModelProviders,
+  onPreview,
 }: {
   activePanel: BotConfigurationPanelId;
   bot: BotRow;
   onPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
   onOpenModelProviders: () => void;
+  onPreview: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
@@ -1769,7 +1809,7 @@ function BotDetailConfiguration({
                 )}
                 Save draft
               </Button>
-              <Button variant="secondary" size="md">
+              <Button variant="secondary" size="md" onClick={onPreview}>
                 <Play className="size-4" aria-hidden="true" />
                 Preview
               </Button>
@@ -1827,7 +1867,7 @@ function BotDetailConfiguration({
             >
               Reset
             </Button>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={onPreview}>
               Preview
             </Button>
             <Button size="sm" disabled={isSaving} onClick={() => void saveConfiguration()}>
@@ -4411,7 +4451,7 @@ function BotDetailScreen({
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
-            <Button variant="secondary" size="md">
+            <Button variant="secondary" size="md" onClick={() => onTabChange('playground')}>
               <Play className="size-4" aria-hidden="true" />
               Test
             </Button>
@@ -4419,11 +4459,13 @@ function BotDetailScreen({
               <Rocket className="size-4" aria-hidden="true" />
               Publish
             </Button>
-            <IconButton aria-label={`Copy ${bot.name} bot ID`} variant="secondary" size="md">
+            <IconButton
+              aria-label={`Copy ${bot.name} bot ID`}
+              variant="secondary"
+              size="md"
+              onClick={() => void navigator.clipboard.writeText(bot.id)}
+            >
               <Copy className="size-4" aria-hidden="true" />
-            </IconButton>
-            <IconButton aria-label={`More actions for ${bot.name}`} variant="secondary" size="md">
-              <MoreHorizontal className="size-4" aria-hidden="true" />
             </IconButton>
           </div>
         </div>
@@ -4445,6 +4487,7 @@ function BotDetailScreen({
           onPanelChange={onConfigurationPanelChange}
           onBotUpdated={onBotUpdated}
           onOpenModelProviders={onOpenModelProviders}
+          onPreview={() => onTabChange('playground')}
         />
       ) : null}
       {activeTab === 'knowledge' ? (
@@ -4612,7 +4655,7 @@ function BotsListScreen({
                 Operational state, ownership, and publication freshness across workspace bots.
               </PanelDescription>
             </div>
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={() => exportBotsToCsv(filteredBots)}>
               Export CSV
             </Button>
           </PanelHeader>
@@ -5624,91 +5667,30 @@ function CreateBotModal({
 
 function SettingsScreen({ user }: { user: AuthSessionUser }) {
   const displayName = getDisplayName(user);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   return (
-    <>
-      <Panel>
-        <PanelHeader>
-          <PanelTitle>Account settings</PanelTitle>
-          <PanelDescription>
-            Manage your account and the bots connected to your default workspace.
-          </PanelDescription>
-        </PanelHeader>
-        <PanelBody className="grid gap-4">
-          <div className="grid gap-3">
-            <div className="rounded-md border border-border bg-surface-raised p-4">
-              <p className="text-xs text-muted-foreground">Signed in as</p>
-              <div className="mt-2 flex items-center gap-3">
-                <UserAvatar user={user} className="size-9" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{user.email}</p>
-                </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>Account settings</PanelTitle>
+        <PanelDescription>
+          Manage your account and the bots connected to your default workspace.
+        </PanelDescription>
+      </PanelHeader>
+      <PanelBody className="grid gap-4">
+        <div className="grid gap-3">
+          <div className="rounded-md border border-border bg-surface-raised p-4">
+            <p className="text-xs text-muted-foreground">Signed in as</p>
+            <div className="mt-2 flex items-center gap-3">
+              <UserAvatar user={user} className="size-9" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{displayName}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{user.email}</p>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-danger/40 bg-danger-muted p-4">
-            <div className="flex items-center gap-2">
-              <TriangleAlert className="size-4 text-danger" aria-hidden="true" />
-              <p className="text-sm font-semibold text-danger">Danger zone</p>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Deleting your account will remove your profile, sessions, OAuth identities, and bots
-              from BotDock.
-            </p>
-            <Button
-              className="mt-4"
-              variant="danger"
-              size="md"
-              onClick={() => setIsDeleteModalOpen(true)}
-            >
-              <Trash2 className="size-4" aria-hidden="true" />
-              Delete account
-            </Button>
-          </div>
-        </PanelBody>
-      </Panel>
-
-      {isDeleteModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
-          role="presentation"
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-account-title"
-            className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
-                <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
-              </div>
-              <div>
-                <h2 id="delete-account-title" className="text-lg font-semibold text-foreground">
-                  Delete account?
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  This is a destructive action. Your profile, login connections, sessions, and bots
-                  will be permanently removed. This cannot be undone.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button variant="secondary" size="md" onClick={() => setIsDeleteModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="danger" size="md" onClick={() => setIsDeleteModalOpen(false)}>
-                I understand, delete account
-              </Button>
             </div>
           </div>
         </div>
-      ) : null}
-    </>
+      </PanelBody>
+    </Panel>
   );
 }
 
@@ -5726,6 +5708,7 @@ export function AppShell() {
   const [theme, setTheme] = useState<AppTheme>('dark');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState<AuthSessionUser>(fallbackUser);
+  const [sessionLoadError, setSessionLoadError] = useState(false);
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
   const selectedBot = useMemo(
@@ -5814,6 +5797,7 @@ export function AppShell() {
         });
 
         if (!response.ok) {
+          if (isMounted) setSessionLoadError(true);
           return;
         }
 
@@ -5821,9 +5805,14 @@ export function AppShell() {
 
         if (isMounted && payload.user) {
           setSessionUser(payload.user);
+          setSessionLoadError(false);
         }
       } catch {
-        // Keep the dashboard usable with local fallback data if the API is unavailable.
+        // Keep the dashboard shell usable, but flag it — the topbar/settings
+        // identity is a local placeholder, not confirmed real, until this
+        // resolves. Every other API call still requires a real session
+        // cookie, so this alone doesn't grant access to anything.
+        if (isMounted) setSessionLoadError(true);
       }
     }
 
@@ -6025,10 +6014,9 @@ export function AppShell() {
                       <ThemeIcon className="size-4" aria-hidden="true" />
                       {nextTheme === 'light' ? 'Day mode' : 'Night mode'}
                     </Button>
-                    <Button variant="secondary" size="md">
+                    <span className="hidden items-center rounded-md border border-border px-3 py-2 text-sm text-muted-foreground md:inline-flex">
                       Last 30 days
-                      <ChevronDown className="size-4" aria-hidden="true" />
-                    </Button>
+                    </span>
                     <Button size="md" onClick={() => setIsCreateBotOpen(true)}>
                       <Bot className="size-4" aria-hidden="true" />
                       Create bot
@@ -6045,6 +6033,12 @@ export function AppShell() {
                         <span className="hidden max-w-28 truncate text-foreground sm:inline">
                           {sessionFirstName}
                         </span>
+                        {sessionLoadError ? (
+                          <TriangleAlert
+                            className="size-3.5 text-warning"
+                            aria-label="Could not verify your session"
+                          />
+                        ) : null}
                         <ChevronDown
                           className="size-3.5 text-muted-foreground"
                           aria-hidden="true"
@@ -6063,6 +6057,13 @@ export function AppShell() {
                             <p className="mt-1 truncate text-xs text-muted-foreground">
                               {sessionUser.email}
                             </p>
+                            {sessionLoadError ? (
+                              <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+                                Could not verify your session — sign out and back in if things
+                                look wrong.
+                              </p>
+                            ) : null}
                           </div>
                           <div className="grid gap-1 p-1.5">
                             <button

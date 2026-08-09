@@ -29,7 +29,7 @@ describe('dashboard route state', () => {
   it('writes compact bot configuration routes and omits default state', () => {
     const replaceState = vi.fn();
     vi.stubGlobal('window', {
-      location: { search: '' },
+      location: { search: '', pathname: '/app' },
       history: { replaceState },
     });
 
@@ -43,7 +43,7 @@ describe('dashboard route state', () => {
     expect(replaceState).toHaveBeenCalledWith(
       null,
       '',
-      '/?section=bots&bot=bot-123&tab=configuration&config=conversation',
+      '/app?section=bots&bot=bot-123&tab=configuration&config=conversation',
     );
 
     writeDashboardRoute({
@@ -56,14 +56,14 @@ describe('dashboard route state', () => {
     expect(replaceState).toHaveBeenLastCalledWith(
       null,
       '',
-      '/?section=bots&bot=bot-123&tab=configuration',
+      '/app?section=bots&bot=bot-123&tab=configuration',
     );
   });
 
   it('does not persist configuration panel state outside the configuration tab', () => {
     const replaceState = vi.fn();
     vi.stubGlobal('window', {
-      location: { search: '' },
+      location: { search: '', pathname: '/app' },
       history: { replaceState },
     });
 
@@ -74,7 +74,7 @@ describe('dashboard route state', () => {
       selectedBotConfigurationPanel: 'safety',
     });
 
-    expect(replaceState).toHaveBeenCalledWith(null, '', '/?section=bots&bot=bot-123&tab=knowledge');
+    expect(replaceState).toHaveBeenCalledWith(null, '', '/app?section=bots&bot=bot-123&tab=knowledge');
   });
 
   it('opens newly created bots directly in configuration with a clean default panel', () => {
