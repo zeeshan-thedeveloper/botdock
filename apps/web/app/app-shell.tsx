@@ -42,7 +42,6 @@ import {
   AlertCircle,
   Archive,
   ArrowLeft,
-  BarChart3,
   Brain,
   Bot,
   ChevronDown,
@@ -153,12 +152,6 @@ const navGroups: NavGroup[] = [
         icon: MessageSquareText,
         description: 'Live and historical visitor conversations across bots.',
       },
-      {
-        id: 'analytics',
-        label: 'Analytics',
-        icon: BarChart3,
-        description: 'Usage, feedback, resolution rate, and volume trends.',
-      },
     ],
   },
   {
@@ -202,7 +195,6 @@ type BotDetailTab =
   | 'knowledge'
   | 'playground'
   | 'conversations'
-  | 'analytics'
   | 'deployments'
   | 'settings';
 type BotConfigurationPanelId = 'identity' | 'instructions' | 'model' | 'conversation' | 'safety';
@@ -438,7 +430,6 @@ const botDetailTabs: Array<{ id: BotDetailTab; label: string }> = [
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'playground', label: 'Playground' },
   { id: 'conversations', label: 'Conversations' },
-  { id: 'analytics', label: 'Analytics' },
   { id: 'deployments', label: 'Deployments' },
   { id: 'settings', label: 'Settings' },
 ];
@@ -542,8 +533,16 @@ function isNavItemId(value: string | null): value is string {
   );
 }
 
+function getSupportedNavItemId(value: string | null): string {
+  return isNavItemId(value) ? value : 'overview';
+}
+
 function isBotDetailTab(value: string | null): value is BotDetailTab {
   return Boolean(value && botDetailTabs.some((tab) => tab.id === value));
+}
+
+function getSupportedBotDetailTab(value: string | null): BotDetailTab {
+  return isBotDetailTab(value) ? value : 'overview';
 }
 
 function isBotConfigurationPanel(value: string | null): value is BotConfigurationPanelId {
@@ -576,7 +575,7 @@ export function getInitialDashboardRoute(): DashboardRouteState {
     return {
       activeItemId: 'bots',
       selectedBotId,
-      selectedBotTab: isBotDetailTab(selectedBotTab) ? selectedBotTab : 'overview',
+      selectedBotTab: getSupportedBotDetailTab(selectedBotTab),
       selectedBotConfigurationPanel: isBotConfigurationPanel(selectedBotConfigurationPanel)
         ? selectedBotConfigurationPanel
         : 'identity',
@@ -584,7 +583,7 @@ export function getInitialDashboardRoute(): DashboardRouteState {
   }
 
   const section = params.get('section');
-  const activeItemId = isNavItemId(section) ? section : 'overview';
+  const activeItemId = getSupportedNavItemId(section);
 
   return {
     activeItemId,
@@ -3731,27 +3730,33 @@ function ConversationDetailView({
               <PanelHeader>
                 <PanelTitle>Context</PanelTitle>
               </PanelHeader>
-              <PanelBody className="grid gap-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
+              <PanelBody className="grid min-w-0 gap-3 text-sm">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
                   <span className="flex items-center gap-1.5 text-muted-foreground">
                     <User className="size-3.5" aria-hidden="true" />
                     Visitor
                   </span>
-                  <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                  <span className="min-w-0 justify-self-end break-all text-right font-mono text-xs leading-5 text-foreground">
                     {conversation.visitorId ?? '—'}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
                   <span className="text-muted-foreground">Source</span>
-                  <span className="text-foreground">{conversationSourceLabel[conversation.source]}</span>
+                  <span className="min-w-0 justify-self-end break-words text-right text-foreground">
+                    {conversationSourceLabel[conversation.source]}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
                   <span className="text-muted-foreground">Started</span>
-                  <span className="text-foreground">{formatTimestamp(conversation.startedAt)}</span>
+                  <span className="min-w-0 justify-self-end break-words text-right text-foreground">
+                    {formatTimestamp(conversation.startedAt)}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
                   <span className="text-muted-foreground">Last message</span>
-                  <span className="text-foreground">{formatTimestamp(conversation.lastMessageAt)}</span>
+                  <span className="min-w-0 justify-self-end break-words text-right text-foreground">
+                    {formatTimestamp(conversation.lastMessageAt)}
+                  </span>
                 </div>
               </PanelBody>
             </Panel>
@@ -4451,22 +4456,10 @@ function BotDetailScreen({
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
-            <Button variant="secondary" size="md" onClick={() => onTabChange('playground')}>
-              <Play className="size-4" aria-hidden="true" />
-              Test
-            </Button>
             <Button size="md" onClick={() => setIsPublishModalOpen(true)}>
               <Rocket className="size-4" aria-hidden="true" />
               Publish
             </Button>
-            <IconButton
-              aria-label={`Copy ${bot.name} bot ID`}
-              variant="secondary"
-              size="md"
-              onClick={() => void navigator.clipboard.writeText(bot.id)}
-            >
-              <Copy className="size-4" aria-hidden="true" />
-            </IconButton>
           </div>
         </div>
 

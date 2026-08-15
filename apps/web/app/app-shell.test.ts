@@ -26,6 +26,30 @@ describe('dashboard route state', () => {
     });
   });
 
+  it('falls back from removed analytics routes', () => {
+    vi.stubGlobal('window', {
+      location: { search: '?section=analytics' },
+      history: { replaceState: vi.fn() },
+    });
+
+    expect(getInitialDashboardRoute()).toMatchObject({
+      activeItemId: 'overview',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+    });
+
+    vi.stubGlobal('window', {
+      location: { search: '?section=bots&bot=bot-123&tab=analytics' },
+      history: { replaceState: vi.fn() },
+    });
+
+    expect(getInitialDashboardRoute()).toMatchObject({
+      activeItemId: 'bots',
+      selectedBotId: 'bot-123',
+      selectedBotTab: 'overview',
+    });
+  });
+
   it('writes compact bot configuration routes and omits default state', () => {
     const replaceState = vi.fn();
     vi.stubGlobal('window', {
