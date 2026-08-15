@@ -38,7 +38,6 @@ import {
   type ProviderCredential,
 } from '@botdock/contracts';
 import {
-  Activity,
   AlertCircle,
   Archive,
   ArrowLeft,
@@ -151,17 +150,6 @@ const navGroups: NavGroup[] = [
         label: 'Conversations',
         icon: MessageSquareText,
         description: 'Live and historical visitor conversations across bots.',
-      },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      {
-        id: 'activity',
-        label: 'Activity',
-        icon: Activity,
-        description: 'Operational events and workspace audit signals.',
       },
     ],
   },

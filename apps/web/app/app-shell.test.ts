@@ -26,9 +26,20 @@ describe('dashboard route state', () => {
     });
   });
 
-  it('falls back from removed analytics routes', () => {
+  it('falls back from removed top-level routes', () => {
     vi.stubGlobal('window', {
       location: { search: '?section=analytics' },
+      history: { replaceState: vi.fn() },
+    });
+
+    expect(getInitialDashboardRoute()).toMatchObject({
+      activeItemId: 'overview',
+      selectedBotId: null,
+      selectedBotTab: 'overview',
+    });
+
+    vi.stubGlobal('window', {
+      location: { search: '?section=activity' },
       history: { replaceState: vi.fn() },
     });
 
