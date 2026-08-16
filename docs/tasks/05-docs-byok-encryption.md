@@ -29,4 +29,10 @@ no per-tenant key derivation, envelope encryption, or KMS integration.
 No code changes — this is a documentation-only task.
 
 ## Result
-_(filled in during Step 2)_
+
+Wrote `docs/decisions/byok-key-encryption.md`: the current design (AES-256-GCM, random IV per record, single static key derived from `PROVIDER_CREDENTIAL_ENC_KEY` via SHA-256), blast radius if that key is compromised (attacker + DB access can decrypt every tenant's stored provider credential at once, not just one tenant's — the random IV protects against pattern analysis, not blast radius), why single-key is an acceptable tradeoff at this stage (small, tightly-held operational surface; real infra cost to do better isn't justified yet), and what per-tenant envelope encryption / KMS-backed wrapping would look like at scale (per-tenant DEKs, KEK held in a KMS, decrypt-through-KMS so a compromised app process alone can't decrypt stored secrets).
+
+Files touched:
+- `docs/decisions/byok-key-encryption.md` (new)
+
+No code changed — `pnpm lint` unaffected.
