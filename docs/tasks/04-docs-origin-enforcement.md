@@ -32,4 +32,10 @@ arbitrary `Origin` header.
 No code changes — this is a documentation-only task.
 
 ## Result
-_(filled in during Step 2)_
+
+Wrote `docs/decisions/origin-enforcement.md`: what's enforced today (per-bot allowed-domain patterns checked against the request `Origin` header in `WidgetController.streamMessage` / `origin.util.ts`), what isn't (no CORS-level enforcement — `main.ts` reflects any `/public/*` origin; spoofable by non-browser clients; no per-embed identity), why it's an acceptable v1 tradeoff (stops the common accidental/incidental embed case at no config or infra cost, doesn't block future hardening), and what a hardened version would need (signed, short-lived embed tokens bound to the deployment, verified server-side, with the `Origin` check kept as a cheap defense-in-depth layer).
+
+Files touched:
+- `docs/decisions/origin-enforcement.md` (new)
+
+No code changed — `pnpm lint` unaffected.
