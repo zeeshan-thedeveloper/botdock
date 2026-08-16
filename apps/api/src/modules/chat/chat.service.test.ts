@@ -8,7 +8,7 @@ function createPrismaMock() {
   return {
     bot: { findFirst: vi.fn() },
     botDeployment: { findFirst: vi.fn() },
-    providerCredential: { findUnique: vi.fn() },
+    providerCredential: { findFirst: vi.fn() },
     conversation: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
     message: { findMany: vi.fn(), create: vi.fn() },
     messageSource: { createMany: vi.fn() },
@@ -147,7 +147,7 @@ describe('ChatService.runChat', () => {
         },
       },
     });
-    prisma.providerCredential.findUnique.mockResolvedValue({ status: 'ACTIVE' });
+    prisma.providerCredential.findFirst.mockResolvedValue({ status: 'ACTIVE' });
     retrievalService.retrieve.mockResolvedValue({ hasRelevantKnowledge: false, chunks: [] });
     prisma.message.create
       .mockResolvedValueOnce({ id: 'msg-user' })
@@ -161,14 +161,43 @@ describe('ChatService.runChat', () => {
         where: { botId: 'bot-1', organisationId: 'org-1', environment: 'PRODUCTION', status: 'ACTIVE' },
       }),
     );
-    expect(prisma.providerCredential.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'cred-published' } }),
+    expect(prisma.providerCredential.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'cred-published', organisationId: 'org-1' } }),
     );
     // Fallback path only runs when strictKnowledge (from the snapshot) is honoured
     // and retrieval found nothing — confirms the snapshot's fields actually drove the pipeline.
     expect(retrievalService.retrieve).toHaveBeenCalledWith(
       expect.objectContaining({ botId: 'bot-1', topK: 3 }),
     );
+  });
+
+  it('cannot resolve a provider credential belonging to a different organisation than the published bot', async () => {
+    // The deployment snapshot's providerCredentialId is trusted data written at
+    // publish time. If it ever pointed at a credential from another org (bug
+    // upstream, or a stale snapshot after cross-org data movement), the lookup
+    // must still fail closed rather than resolving that org's credential status.
+    prisma.botDeployment.findFirst.mockResolvedValue({
+      currentVersion: {
+        configSnapshot: {
+          instructions: 'Published instructions.',
+          model: 'gpt-4o',
+          temperature: 0.1,
+          maxSources: 3,
+          strictKnowledge: true,
+          providerCredentialId: 'cred-belongs-to-org-b',
+        },
+      },
+    });
+    prisma.providerCredential.findFirst.mockResolvedValue(null); // org-1 scoped query finds nothing
+    retrievalService.retrieve.mockResolvedValue({ hasRelevantKnowledge: false, chunks: [] });
+
+    const events = await collect(service.runChat(baseInput({ configVersion: 'published', organisationId: 'org-1' })));
+
+    expect(prisma.providerCredential.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'cred-belongs-to-org-b', organisationId: 'org-1' } }),
+    );
+    expect(events).toEqual([{ type: 'error', code: 'no_provider_key', message: expect.any(String) }]);
+    expect(aiProviderFactory.getChatProvider).not.toHaveBeenCalled();
   });
 
   it('emits bot_not_found for a published bot with no active PRODUCTION deployment', async () => {
