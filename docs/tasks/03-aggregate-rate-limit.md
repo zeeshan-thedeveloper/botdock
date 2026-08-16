@@ -39,4 +39,13 @@ No per-organisation limiting, no billing/spend logic — that's a separate,
 larger feature. This task only adds the one deployment-level aggregate key.
 
 ## Result
-_(filled in during Step 2)_
+
+Added a second Redis-backed check to `WidgetRateLimitGuard` (`apps/api/src/modules/chat/widget-rate-limit.guard.ts`), keyed on `ratelimit:widget:aggregate:${deploymentId}` alone (no IP), with its own window/threshold (60s / 300 requests — ~15x the existing per-IP ceiling of 20 req/60s). Both the existing per-IP check and the new aggregate check always increment on every request and are evaluated together; the request is rejected (429) if either is over budget. Extracted a shared `checkLimit(key, windowSeconds, maxRequests)` helper used by both, and split the 429 message so the two failure modes are distinguishable in the response (`"Too many messages sent..."` for per-IP vs `"...unusually high traffic..."` for the aggregate). Both thresholds and the reasoning behind them are documented as code comments above their constants.
+
+Added `widget-rate-limit.guard.test.ts` (new — no test existed for this guard before) with an in-memory Redis stand-in mocking `incr`/`expire`/`ttl` keyed like the real store: under-limit passthrough, per-IP limit tripping independently, aggregate limit tripping across many distinct IPs against one deployment, aggregate counters staying independent per deployment, and `onModuleDestroy` disconnecting Redis.
+
+Files touched:
+- `apps/api/src/modules/chat/widget-rate-limit.guard.ts`
+- `apps/api/src/modules/chat/widget-rate-limit.guard.test.ts` (new)
+
+Test output: `pnpm --filter @botdock/api test` — 19 test files, 132 tests, all passed (5 new). `pnpm --filter @botdock/api typecheck` and `pnpm --filter @botdock/api lint` both clean.
