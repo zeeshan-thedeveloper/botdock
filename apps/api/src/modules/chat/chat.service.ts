@@ -286,9 +286,13 @@ export class ChatService {
 
     // Credential status must be re-checked live — it may have been revoked
     // since this version was published, and the snapshot only carries the id.
+    // Scoped by organisationId too: the snapshot's providerCredentialId is
+    // trusted data written at publish time, but this lookup shouldn't ever
+    // be able to resolve another tenant's credential even if that trust is
+    // violated upstream.
     const providerCredential = snapshot.providerCredentialId
-      ? await this.prisma.providerCredential.findUnique({
-          where: { id: snapshot.providerCredentialId },
+      ? await this.prisma.providerCredential.findFirst({
+          where: { id: snapshot.providerCredentialId, organisationId: input.organisationId },
           select: { status: true },
         })
       : null;

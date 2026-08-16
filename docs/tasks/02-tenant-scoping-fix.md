@@ -39,4 +39,13 @@ single, targeted fix to `resolvePublishedBot`'s credential lookup, not a
 sweep of the rest of the codebase.
 
 ## Result
-_(filled in during Step 2)_
+
+Changed `ChatService.resolvePublishedBot` (`apps/api/src/modules/chat/chat.service.ts`) to look up the credential status with `providerCredential.findFirst({ where: { id, organisationId } })` instead of `findUnique({ where: { id } })` — `ProviderCredential` has no compound `(id, organisationId)` unique constraint, so `findFirst` is the same pattern already used by `ProviderCredentialsService.validateCredential`. A snapshot pointing at another org's credential now resolves `providerCredential: null`, which the existing `no_provider_key` guard already turns into a clean, safe failure instead of exposing that credential's status.
+
+Added `chat.service.test.ts`: "cannot resolve a provider credential belonging to a different organisation than the published bot" — mocks the org-scoped `findFirst` returning `null` for a credential belonging to a different org, and asserts the pipeline emits `no_provider_key` and never calls `aiProviderFactory.getChatProvider`. Updated the existing "resolves published config from the PRODUCTION deployment snapshot" test's mock/assertions from `findUnique`/`{ id }` to `findFirst`/`{ id, organisationId }`.
+
+Files touched:
+- `apps/api/src/modules/chat/chat.service.ts`
+- `apps/api/src/modules/chat/chat.service.test.ts`
+
+Test output: `pnpm --filter @botdock/api test` — 18 test files, 127 tests, all passed. `pnpm --filter @botdock/api typecheck` and `pnpm --filter @botdock/api lint` both clean.
