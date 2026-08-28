@@ -172,6 +172,7 @@ export class AuthService {
     });
 
     return this.prisma.$transaction(async (transaction) => {
+      const isNewUser = !existingUser;
       const user =
         existingUser ??
         (await transaction.user.create({
@@ -195,8 +196,46 @@ export class AuthService {
         },
       });
 
+      // There's no separate "create your workspace" step yet — every account
+      // needs somewhere to operate from the moment they first sign in, so a
+      // brand-new user gets a personal organisation (as its OWNER) right here.
+      // Signing in again, or linking a second OAuth provider to an existing
+      // account, must not create another one.
+      if (isNewUser) {
+        const nameBase = this.organisationNameBase(user);
+        await transaction.organisation.create({
+          data: {
+            name: `${nameBase}'s Workspace`,
+            slug: this.generateOrganisationSlug(nameBase),
+            members: {
+              create: { userId: user.id, role: 'OWNER' },
+            },
+          },
+        });
+      }
+
       return user;
     });
+  }
+
+  private organisationNameBase(user: { name: string | null; email: string }): string {
+    return user.name?.trim() || user.email.split('@')[0] || user.email;
+  }
+
+  /**
+   * Collision odds are astronomically low (32 bits of randomness per slug),
+   * so — matching how cuid() ids are trusted elsewhere in this codebase — a
+   * single insert is used instead of a generate-check-retry loop.
+   */
+  private generateOrganisationSlug(seed: string): string {
+    const base =
+      seed
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'workspace';
+
+    return `${base}-${randomBytes(4).toString('hex')}`;
   }
 
   private signState(payload: OAuthStatePayload) {

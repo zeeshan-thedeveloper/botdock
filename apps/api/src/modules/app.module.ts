@@ -11,6 +11,7 @@ import { DeploymentModule } from './deployment/deployment.module.js';
 import { HealthModule } from './health/health.module.js';
 import { KnowledgeModule } from './knowledge/knowledge.module.js';
 import { LoggerModule } from './logger/logger.module.js';
+import { OrganisationsModule } from './organisations/organisations.module.js';
 import { ProviderCredentialsModule } from './provider-credentials/provider-credentials.module.js';
 
 @Module({
@@ -22,6 +23,7 @@ import { ProviderCredentialsModule } from './provider-credentials/provider-crede
     LoggerModule,
     DatabaseModule,
     AuthModule,
+    OrganisationsModule,
     BotsModule,
     ProviderCredentialsModule,
     AiModule,
