@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   activityTimeseriesResponseSchema,
@@ -14,6 +23,7 @@ import {
   conversationsListResponseSchema,
   deploymentInfoSchema,
   knowledgeSourcesResponseSchema,
+  listMyOrganisationsResponseSchema,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
   type ActivityTimeseriesResponse,
@@ -214,7 +224,14 @@ type ProviderCredentialsMessage = {
   text: string;
 };
 
-const workspaceOrganisationId = process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '';
+// Resolved per-session by AppShell (GET /organisations, taken from the
+// signed-in user's own membership) once the session loads, and provided down
+// through this context. The env var is only a fallback for the brief window
+// before that resolves, or for a deployment intentionally pinned to one
+// fixed workspace.
+const OrganisationContext = createContext<string>(
+  process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '',
+);
 
 const defaultBotBehaviorConfig: BotBehaviorConfig = {
   initials: 'BD',
@@ -678,7 +695,8 @@ function OverviewLineChart({ days }: { days: ActivityTimeseriesResponse['days'] 
     return values
       .map((value, index) => {
         const x = index * stepX;
-        const y = height - bottomPadding - (value / maxValue) * (height - topPadding - bottomPadding);
+        const y =
+          height - bottomPadding - (value / maxValue) * (height - topPadding - bottomPadding);
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       })
       .join(' ');
@@ -686,7 +704,12 @@ function OverviewLineChart({ days }: { days: ActivityTimeseriesResponse['days'] 
 
   return (
     <div>
-      <svg className="h-44 w-full" viewBox={`0 0 ${width} ${height}`} fill="none" aria-hidden="true">
+      <svg
+        className="h-44 w-full"
+        viewBox={`0 0 ${width} ${height}`}
+        fill="none"
+        aria-hidden="true"
+      >
         <path d="M0 145H520M0 105H520M0 65H520M0 25H520" stroke="hsl(var(--color-border))" />
         <polyline
           points={toPoints(days.map((day) => day.conversations))}
@@ -731,7 +754,9 @@ function OverviewDashboard({
     .map((bot) => bot.stats.positiveFeedbackRate)
     .filter((rate): rate is number => rate !== null);
   const positiveFeedbackRate =
-    feedbackRates.length > 0 ? feedbackRates.reduce((sum, rate) => sum + rate, 0) / feedbackRates.length : null;
+    feedbackRates.length > 0
+      ? feedbackRates.reduce((sum, rate) => sum + rate, 0) / feedbackRates.length
+      : null;
 
   const metrics = [
     { label: 'Active bots', value: formatCount(activeBots) },
@@ -739,7 +764,8 @@ function OverviewDashboard({
     { label: 'Messages', value: formatCount(totalMessages) },
     {
       label: 'Positive feedback',
-      value: positiveFeedbackRate !== null ? formatPercent(positiveFeedbackRate) : 'No feedback yet',
+      value:
+        positiveFeedbackRate !== null ? formatPercent(positiveFeedbackRate) : 'No feedback yet',
     },
     { label: 'Est. AI cost', value: `$${totalCost.toFixed(2)}` },
   ];
@@ -930,16 +956,21 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
     { label: 'Messages', value: formatCount(stats.messageCount) },
     {
       label: 'Feedback',
-      value: stats.positiveFeedbackRate !== null ? formatPercent(stats.positiveFeedbackRate) : 'No feedback yet',
+      value:
+        stats.positiveFeedbackRate !== null
+          ? formatPercent(stats.positiveFeedbackRate)
+          : 'No feedback yet',
       tone: 'primary' as const,
     },
     { label: 'AI cost', value: `$${stats.estCostUsd.toFixed(2)}`, tone: 'warning' as const },
     {
       label: 'Knowledge sources',
       value: `${formatCount(stats.readyKnowledgeSourceCount)}/${formatCount(stats.knowledgeSourceCount)} ready`,
-      tone: stats.knowledgeSourceCount > 0 && stats.readyKnowledgeSourceCount < stats.knowledgeSourceCount
-        ? ('warning' as const)
-        : ('success' as const),
+      tone:
+        stats.knowledgeSourceCount > 0 &&
+        stats.readyKnowledgeSourceCount < stats.knowledgeSourceCount
+          ? ('warning' as const)
+          : ('success' as const),
     },
   ];
 
@@ -951,7 +982,9 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
     },
     {
       label: 'Injection protection',
-      detail: bot.behaviorConfig.promptInjectionProtection ? 'Filtering suspicious prompts' : 'Not filtering',
+      detail: bot.behaviorConfig.promptInjectionProtection
+        ? 'Filtering suspicious prompts'
+        : 'Not filtering',
       on: bot.behaviorConfig.promptInjectionProtection,
     },
     {
@@ -973,7 +1006,9 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
         <Panel>
           <PanelHeader>
             <PanelTitle>Knowledge health</PanelTitle>
-            <PanelDescription>{formatKnowledgeSummary(stats)} powering grounded answers.</PanelDescription>
+            <PanelDescription>
+              {formatKnowledgeSummary(stats)} powering grounded answers.
+            </PanelDescription>
           </PanelHeader>
           <PanelBody className="grid gap-4">
             <ProgressBar
@@ -1004,9 +1039,7 @@ function BotDetailOverview({ bot }: { bot: BotRow }) {
         <Panel>
           <PanelHeader>
             <PanelTitle>Production readiness</PanelTitle>
-            <PanelDescription>
-              Guardrails configured for this bot right now.
-            </PanelDescription>
+            <PanelDescription>Guardrails configured for this bot right now.</PanelDescription>
           </PanelHeader>
           <PanelBody>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -1121,6 +1154,7 @@ function BotDetailConfiguration({
   onPreview: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const initialConfig = useMemo(() => getBotConfiguration(bot), [bot]);
   const [config, setConfig] = useState<BotConfiguration>(initialConfig);
   const [savedConfig, setSavedConfig] = useState<BotConfiguration>(initialConfig);
@@ -1245,7 +1279,7 @@ function BotDetailConfiguration({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, workspaceOrganisationId]);
 
   useEffect(() => {
     if (!didLoadCredentials || isLoadingCredentials || !config.providerCredentialId) {
@@ -1376,7 +1410,10 @@ function BotDetailConfiguration({
 
       const updatedBot = botSchema.parse(await response.json());
       onBotUpdated(updatedBot);
-      setSaveMessage({ tone: 'success', text: 'Published. The live widget now serves this version.' });
+      setSaveMessage({
+        tone: 'success',
+        text: 'Published. The live widget now serves this version.',
+      });
     } catch (error) {
       setSaveMessage({
         tone: 'danger',
@@ -1936,6 +1973,7 @@ function BotDetailKnowledge({
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1955,7 +1993,7 @@ function BotDetailKnowledge({
         `/organisations/${workspaceOrganisationId}/bots/${bot.id}/knowledge${suffix}`,
         apiBaseUrl,
       ),
-    [apiBaseUrl, bot.id],
+    [apiBaseUrl, bot.id, workspaceOrganisationId],
   );
 
   const loadSources = useCallback(async () => {
@@ -1976,9 +2014,7 @@ function BotDetailKnowledge({
       setSources(payload.sources);
       setLoadError(null);
     } catch (error) {
-      setLoadError(
-        error instanceof Error ? error.message : 'Could not load knowledge sources.',
-      );
+      setLoadError(error instanceof Error ? error.message : 'Could not load knowledge sources.');
     } finally {
       setIsLoading(false);
     }
@@ -2102,7 +2138,11 @@ function BotDetailKnowledge({
               <Plus className="size-4" aria-hidden="true" />
               Add FAQ
             </Button>
-            <Button size="sm" disabled={!hasActiveCredential} onClick={() => setUploadQueueFiles([])}>
+            <Button
+              size="sm"
+              disabled={!hasActiveCredential}
+              onClick={() => setUploadQueueFiles([])}
+            >
               <Upload className="size-4" aria-hidden="true" />
               Upload files
             </Button>
@@ -2151,7 +2191,9 @@ function BotDetailKnowledge({
                 }
               }}
               className={`cursor-pointer rounded-lg border border-dashed p-8 text-center transition ${
-                isDropzoneActive ? 'border-primary bg-primary-muted/40' : 'border-border bg-surface/70'
+                isDropzoneActive
+                  ? 'border-primary bg-primary-muted/40'
+                  : 'border-border bg-surface/70'
               }`}
             >
               <Upload className="mx-auto size-6 text-muted-foreground" aria-hidden="true" />
@@ -2208,7 +2250,10 @@ function BotDetailKnowledge({
                 ))}
               </div>
 
-              <DataTable className="w-full max-w-full table-fixed" wrapperClassName="hidden md:block">
+              <DataTable
+                className="w-full max-w-full table-fixed"
+                wrapperClassName="hidden md:block"
+              >
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[38%] px-3 sm:px-4">Source</TableHead>
@@ -2347,7 +2392,9 @@ function AddKnowledgeContentModal({
       onClose();
     } catch (submitError) {
       setError(
-        submitError instanceof Error ? submitError.message : 'Could not save this knowledge source.',
+        submitError instanceof Error
+          ? submitError.message
+          : 'Could not save this knowledge source.',
       );
     } finally {
       setIsSaving(false);
@@ -2470,7 +2517,9 @@ function UploadKnowledgeFilesModal({
       await onFilesQueued(validFiles.map((item) => item.file));
       onClose();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Could not upload these files.');
+      setError(
+        uploadError instanceof Error ? uploadError.message : 'Could not upload these files.',
+      );
     } finally {
       setIsUploading(false);
     }
@@ -2547,9 +2596,7 @@ function UploadKnowledgeFilesModal({
                   className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-surface-raised px-3 py-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {item.file.name}
-                    </p>
+                    <p className="truncate text-sm font-medium text-foreground">{item.file.name}</p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       {formatFileSize(item.file.size)}
                       {item.error ? <span className="text-danger"> · {item.error}</span> : null}
@@ -2778,12 +2825,17 @@ function PlaygroundMessageBubble({
       {message.status === 'streaming' ? (
         <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-muted-foreground align-middle" />
       ) : null}
-      {message.status === 'error' ? <p className="mt-2 text-xs text-danger">{message.errorMessage}</p> : null}
+      {message.status === 'error' ? (
+        <p className="mt-2 text-xs text-danger">{message.errorMessage}</p>
+      ) : null}
       {message.citations && message.citations.length > 0 ? (
         <div className="mt-2 border-t border-border pt-2 text-[11.5px] text-muted-foreground">
           Source:{' '}
           {message.citations
-            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+            .map(
+              (citation) =>
+                `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`,
+            )
             .join(' · ')}
         </div>
       ) : null}
@@ -2837,6 +2889,7 @@ function BotDetailPlayground({
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const [messages, setMessages] = useState<PlaygroundMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -2912,7 +2965,9 @@ function BotDetailPlayground({
         } else if (event.type === 'citation') {
           setMessages((current) =>
             current.map((message) =>
-              message.id === assistantMessageId ? { ...message, citations: event.sources } : message,
+              message.id === assistantMessageId
+                ? { ...message, citations: event.sources }
+                : message,
             ),
           );
         } else if (event.type === 'trace') {
@@ -2964,7 +3019,9 @@ function BotDetailPlayground({
         setStreamError({ code: 'network_error', message });
         setMessages((current) =>
           current.map((item) =>
-            item.id === assistantMessageId ? { ...item, status: 'error', errorMessage: message } : item,
+            item.id === assistantMessageId
+              ? { ...item, status: 'error', errorMessage: message }
+              : item,
           ),
         );
       }
@@ -3014,7 +3071,9 @@ function BotDetailPlayground({
     const previousValue = target.feedback ?? null;
 
     setMessages((current) =>
-      current.map((message) => (message.id === messageId ? { ...message, feedback: nextValue } : message)),
+      current.map((message) =>
+        message.id === messageId ? { ...message, feedback: nextValue } : message,
+      ),
     );
 
     try {
@@ -3049,7 +3108,9 @@ function BotDetailPlayground({
     void sendMessage(input);
   }
 
-  const lastAssistantMessageId = [...messages].reverse().find((message) => message.role === 'assistant')?.id;
+  const lastAssistantMessageId = [...messages]
+    .reverse()
+    .find((message) => message.role === 'assistant')?.id;
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_1fr_280px]">
@@ -3228,7 +3289,9 @@ function BotDetailPlayground({
               <TraceRow label="Output tokens" value={trace.completionTokens} />
               <TraceRow
                 label="Est. cost"
-                value={trace.estCostUsd !== undefined ? `$${trace.estCostUsd.toFixed(4)}` : undefined}
+                value={
+                  trace.estCostUsd !== undefined ? `$${trace.estCostUsd.toFixed(4)}` : undefined
+                }
               />
             </div>
 
@@ -3243,13 +3306,17 @@ function BotDetailPlayground({
                     >
                       <div className="flex items-center justify-between gap-2 text-muted-foreground">
                         <span className="min-w-0 truncate">{chunk.label}</span>
-                        <span className="shrink-0 font-mono text-cyan-300">{chunk.score.toFixed(2)}</span>
+                        <span className="shrink-0 font-mono text-cyan-300">
+                          {chunk.score.toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-[11.5px] text-muted-foreground">No chunks retrieved for this turn.</p>
+                <p className="text-[11.5px] text-muted-foreground">
+                  No chunks retrieved for this turn.
+                </p>
               )}
             </div>
 
@@ -3263,7 +3330,9 @@ function BotDetailPlayground({
             ) : null}
           </>
         ) : (
-          <p className="text-xs text-muted-foreground">Send a message to see the trace for that turn.</p>
+          <p className="text-xs text-muted-foreground">
+            Send a message to see the trace for that turn.
+          </p>
         )}
       </Panel>
     </div>
@@ -3323,6 +3392,7 @@ function ConversationRowCard({
 
 function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const hideBotColumn = Boolean(lockedBotId);
 
   const [searchInput, setSearchInput] = useState('');
@@ -3336,11 +3406,17 @@ function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationDetailResponse | null>(null);
+  const [selectedConversation, setSelectedConversation] =
+    useState<ConversationDetailResponse | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  const sourceFilters: Array<'All' | ChatConversationSource> = ['All', 'WIDGET', 'PLAYGROUND', 'API'];
+  const sourceFilters: Array<'All' | ChatConversationSource> = [
+    'All',
+    'WIDGET',
+    'PLAYGROUND',
+    'API',
+  ];
 
   // Debounced so search-as-you-type doesn't fire a request per keystroke.
   useEffect(() => {
@@ -3359,7 +3435,7 @@ function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
       url.search = params.toString();
       return url;
     },
-    [apiBaseUrl, lockedBotId, sourceFilter, search],
+    [apiBaseUrl, lockedBotId, sourceFilter, search, workspaceOrganisationId],
   );
 
   const loadFirstPage = useCallback(async () => {
@@ -3523,8 +3599,12 @@ function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
               <DataTable className="w-full table-fixed" wrapperClassName="hidden md:block">
                 <TableHeader>
                   <TableRow>
-                    {hideBotColumn ? null : <TableHead className="w-[26%] px-3 sm:px-4">Bot</TableHead>}
-                    <TableHead className={hideBotColumn ? 'w-[48%] px-3 sm:px-4' : 'w-[34%] px-3 sm:px-4'}>
+                    {hideBotColumn ? null : (
+                      <TableHead className="w-[26%] px-3 sm:px-4">Bot</TableHead>
+                    )}
+                    <TableHead
+                      className={hideBotColumn ? 'w-[48%] px-3 sm:px-4' : 'w-[34%] px-3 sm:px-4'}
+                    >
                       Last message
                     </TableHead>
                     <TableHead className="w-24 px-3 sm:px-4">Source</TableHead>
@@ -3571,8 +3651,15 @@ function ConversationsScreen({ lockedBotId }: { lockedBotId?: string }) {
 
               {nextCursor ? (
                 <div className="flex justify-center pt-1">
-                  <Button variant="secondary" size="sm" onClick={() => void handleLoadMore()} disabled={isLoadingMore}>
-                    {isLoadingMore ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleLoadMore()}
+                    disabled={isLoadingMore}
+                  >
+                    {isLoadingMore ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : null}
                     Load more
                   </Button>
                 </div>
@@ -3674,7 +3761,8 @@ function ConversationDetailView({
             </PanelHeader>
             <PanelBody className="grid min-w-0 gap-3">
               {conversation.messages.map((message) => {
-                const isEmptyAssistantReply = message.role === 'ASSISTANT' && message.content.trim().length === 0;
+                const isEmptyAssistantReply =
+                  message.role === 'ASSISTANT' && message.content.trim().length === 0;
 
                 return (
                   <div
@@ -3699,7 +3787,10 @@ function ConversationDetailView({
                         <div className="mt-2 border-t border-border/60 pt-2 text-[11.5px] opacity-80">
                           Source:{' '}
                           {message.citations
-                            .map((citation) => `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`)
+                            .map(
+                              (citation) =>
+                                `${citation.label}${citation.location ? ` · ${citation.location}` : ''}`,
+                            )
                             .join(' · ')}
                         </div>
                       ) : null}
@@ -3758,7 +3849,10 @@ function ConversationDetailView({
                 {conversation.messages
                   .filter((message) => message.role === 'ASSISTANT')
                   .map((message) => (
-                    <div key={message.id} className="grid gap-1 rounded-md border border-border p-3 text-xs">
+                    <div
+                      key={message.id}
+                      className="grid gap-1 rounded-md border border-border p-3 text-xs"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-muted-foreground">Model</span>
                         <span className="font-mono text-foreground">{message.model ?? '—'}</span>
@@ -3860,7 +3954,9 @@ function DeleteAllowedDomainModal({
               The widget will stop responding to requests from this domain immediately.
             </p>
             {error ? (
-              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">
+                {error}
+              </p>
             ) : null}
           </div>
         </div>
@@ -3885,9 +3981,11 @@ function DeleteAllowedDomainModal({
 
 function BotDetailDeployments({ bot }: { bot: BotRow }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const buildUrl = useCallback(
-    (suffix = '') => new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}${suffix}`, apiBaseUrl),
-    [apiBaseUrl, bot.id],
+    (suffix = '') =>
+      new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}${suffix}`, apiBaseUrl),
+    [apiBaseUrl, bot.id, workspaceOrganisationId],
   );
 
   const [deployment, setDeployment] = useState<DeploymentInfo | null>(null);
@@ -3915,7 +4013,9 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
       }
       setDeployment(deploymentInfoSchema.parse(await response.json()));
     } catch (error) {
-      setDeploymentError(error instanceof Error ? error.message : 'Could not load deployment status.');
+      setDeploymentError(
+        error instanceof Error ? error.message : 'Could not load deployment status.',
+      );
     } finally {
       setIsLoadingDeployment(false);
     }
@@ -3993,7 +4093,9 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
       setDomains((current) => current.filter((domain) => domain.id !== domainPendingDelete.id));
       setDomainPendingDelete(null);
     } catch (error) {
-      setDeleteDomainError(error instanceof Error ? error.message : 'Could not remove this domain.');
+      setDeleteDomainError(
+        error instanceof Error ? error.message : 'Could not remove this domain.',
+      );
     } finally {
       setIsDeletingDomain(false);
     }
@@ -4050,7 +4152,9 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
                   </span>
                 )}
                 {deployment.currentVersionNumber !== null ? (
-                  <span className="text-sm text-muted-foreground">Version {deployment.currentVersionNumber}</span>
+                  <span className="text-sm text-muted-foreground">
+                    Version {deployment.currentVersionNumber}
+                  </span>
                 ) : null}
                 {deployment.publishedAt ? (
                   <span className="text-sm text-muted-foreground">
@@ -4074,8 +4178,8 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
                   </div>
                   <CodeBlock className="text-xs">{deployment.embedSnippet}</CodeBlock>
                   <p className="text-xs text-muted-foreground">
-                    Paste this on any site you want the widget to appear on — it will only respond on
-                    domains listed below.
+                    Paste this on any site you want the widget to appear on — it will only respond
+                    on domains listed below.
                   </p>
                 </div>
               ) : (
@@ -4128,8 +4232,8 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
               <span className="font-mono text-foreground">example.com</span> — exact host only.
             </p>
             <p>
-              <span className="font-mono text-foreground">*.example.com</span> — any subdomain, not the
-              bare domain itself.
+              <span className="font-mono text-foreground">*.example.com</span> — any subdomain, not
+              the bare domain itself.
             </p>
             <p>
               <span className="font-mono text-foreground">localhost</span> /{' '}
@@ -4169,7 +4273,11 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
               </TableHeader>
               <tbody>
                 {domains.map((domain) => (
-                  <AllowedDomainRow key={domain.id} domain={domain} onDelete={setDomainPendingDelete} />
+                  <AllowedDomainRow
+                    key={domain.id}
+                    domain={domain}
+                    onDelete={setDomainPendingDelete}
+                  />
                 ))}
               </tbody>
             </DataTable>
@@ -4246,7 +4354,9 @@ function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: stri
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
           <span className="shrink-0">Conversations</span>
-          <span className="font-mono text-foreground">{formatCount(bot.stats.conversationCount)}</span>
+          <span className="font-mono text-foreground">
+            {formatCount(bot.stats.conversationCount)}
+          </span>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3">
           <span className="shrink-0">Model key</span>
@@ -4325,7 +4435,9 @@ function PublishBotModal({
               </div>
             ) : null}
             {error ? (
-              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+              <p className="mt-3 break-words text-sm text-danger [overflow-wrap:anywhere]">
+                {error}
+              </p>
             ) : null}
           </div>
         </div>
@@ -4368,6 +4480,7 @@ function BotDetailScreen({
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -4694,7 +4807,8 @@ function BotsListScreen({
                             {bot.id} · {bot.description}
                           </p>
                           <p className="mt-1 break-words text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
-                            {formatKnowledgeSummary(bot.stats)} · Updated {bot.updatedAt} by {bot.updatedBy}
+                            {formatKnowledgeSummary(bot.stats)} · Updated {bot.updatedAt} by{' '}
+                            {bot.updatedBy}
                           </p>
                         </div>
                       </div>
@@ -4788,6 +4902,7 @@ function ProviderCredentialsScreen({
   onCredentialsChanged: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -4852,7 +4967,7 @@ function ProviderCredentialsScreen({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl, canUseCredentialsApi]);
+  }, [apiBaseUrl, canUseCredentialsApi, workspaceOrganisationId]);
 
   function openCreateModal() {
     setOperation({ type: 'create' });
@@ -5332,6 +5447,7 @@ function CreateBotModal({
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
+  const workspaceOrganisationId = useContext(OrganisationContext);
   const [credentials, setCredentials] = useState<ProviderCredential[]>([]);
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -5405,7 +5521,7 @@ function CreateBotModal({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, workspaceOrganisationId]);
 
   async function createBot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -5690,6 +5806,10 @@ export function AppShell() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [sessionUser, setSessionUser] = useState<AuthSessionUser>(fallbackUser);
   const [sessionLoadError, setSessionLoadError] = useState(false);
+  const [workspaceOrganisationId, setWorkspaceOrganisationId] = useState<string>(
+    process.env.NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID ?? '',
+  );
+  const [organisationLoadError, setOrganisationLoadError] = useState(false);
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
   const activeItem = useMemo(() => getNavItem(activeItemId), [activeItemId]);
   const selectedBot = useMemo(
@@ -5731,7 +5851,7 @@ export function AppShell() {
         text: error instanceof Error ? error.message : 'Could not load persisted bots.',
       });
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, workspaceOrganisationId]);
 
   const [activityDays, setActivityDays] = useState<ActivityTimeseriesResponse['days']>([]);
 
@@ -5754,7 +5874,7 @@ export function AppShell() {
     } catch {
       // Overview chart just falls back to its own "not enough data" state.
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, workspaceOrganisationId]);
 
   useEffect(() => {
     void loadActivityTimeseries();
@@ -5787,6 +5907,7 @@ export function AppShell() {
         if (isMounted && payload.user) {
           setSessionUser(payload.user);
           setSessionLoadError(false);
+          await loadMyOrganisation();
         }
       } catch {
         // Keep the dashboard shell usable, but flag it — the topbar/settings
@@ -5794,6 +5915,40 @@ export function AppShell() {
         // resolves. Every other API call still requires a real session
         // cookie, so this alone doesn't grant access to anything.
         if (isMounted) setSessionLoadError(true);
+      }
+    }
+
+    // Every account has exactly one organisation today (auto-created on
+    // first sign-in — see AuthService.findOrCreateOAuthUser), so the first
+    // membership is the workspace this whole dashboard should operate
+    // against. This resolves the real org id in place of the
+    // NEXT_PUBLIC_BOTDOCK_ORGANISATION_ID build-time fallback, which only
+    // ever pointed at one fixed workspace regardless of who signed in.
+    async function loadMyOrganisation() {
+      try {
+        const response = await fetch(new URL('/organisations', apiBaseUrl), {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          if (isMounted) setOrganisationLoadError(true);
+          return;
+        }
+
+        const payload = listMyOrganisationsResponseSchema.parse(await response.json());
+        const primaryOrganisation = payload.organisations[0];
+
+        if (!isMounted) return;
+
+        if (!primaryOrganisation) {
+          setOrganisationLoadError(true);
+          return;
+        }
+
+        setWorkspaceOrganisationId(primaryOrganisation.id);
+        setOrganisationLoadError(false);
+      } catch {
+        if (isMounted) setOrganisationLoadError(true);
       }
     }
 
@@ -5918,257 +6073,269 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-background text-foreground">
-      <div className="flex min-h-screen min-w-0">
-        <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
-          <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
-            <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-              B
+    <OrganisationContext.Provider value={workspaceOrganisationId}>
+      <div className="min-h-screen overflow-x-clip bg-background text-foreground">
+        <div className="flex min-h-screen min-w-0">
+          <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
+            <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
+              <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
+                B
+              </div>
+              <span className="text-sm font-semibold">BotDock</span>
             </div>
-            <span className="text-sm font-semibold">BotDock</span>
-          </div>
 
-          <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
-            <div className="grid gap-5">
-              {navGroups.map((group) => (
-                <div key={group.title}>
-                  <p className="px-2 pb-2 text-[11px] font-semibold uppercase text-muted-foreground/70">
-                    {group.title}
-                  </p>
-                  <div className="grid gap-1">
-                    {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activeItemId === item.id;
-
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => openSection(item.id)}
-                          className={`flex items-center gap-2.5 rounded-md border px-2 py-2 text-left text-sm font-medium transition ${
-                            isActive
-                              ? 'border-border bg-surface-raised text-foreground'
-                              : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
-                          }`}
-                        >
-                          <Icon className="size-4" aria-hidden="true" />
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </nav>
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main className="min-w-0 flex-1 overflow-x-clip overflow-y-auto">
-            <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 md:px-8 md:py-8">
-              {selectedBot ? null : (
-                <div className="mb-6 flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0">
-                    <div className="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-                      <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
-                      <span className="min-w-0 truncate">Default workspace</span>
-                    </div>
-                    <h1 className="break-words text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
-                      {activeItemId === 'overview'
-                        ? `Good afternoon, ${sessionFirstName}`
-                        : activeItem.label}
-                    </h1>
-                    <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground">
-                      {activeItemId === 'overview'
-                        ? 'Create and manage multiple bots from your account.'
-                        : activeItem.description}
+            <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
+              <div className="grid gap-5">
+                {navGroups.map((group) => (
+                  <div key={group.title}>
+                    <p className="px-2 pb-2 text-[11px] font-semibold uppercase text-muted-foreground/70">
+                      {group.title}
                     </p>
-                  </div>
+                    <div className="grid gap-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activeItemId === item.id;
 
-                  <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-                    <Button
-                      variant="secondary"
-                      size="md"
-                      onClick={toggleTheme}
-                      aria-label={`Switch to ${nextTheme} mode`}
-                    >
-                      <ThemeIcon className="size-4" aria-hidden="true" />
-                      {nextTheme === 'light' ? 'Day mode' : 'Night mode'}
-                    </Button>
-                    <span className="hidden items-center rounded-md border border-border px-3 py-2 text-sm text-muted-foreground md:inline-flex">
-                      Last 30 days
-                    </span>
-                    <Button size="md" onClick={() => setIsCreateBotOpen(true)}>
-                      <Bot className="size-4" aria-hidden="true" />
-                      Create bot
-                    </Button>
-                    <div className="relative min-w-0">
-                      <button
-                        type="button"
-                        className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-raised px-2.5 text-left text-sm font-semibold shadow-surface-sm transition hover:border-primary/50 hover:bg-muted"
-                        aria-haspopup="menu"
-                        aria-expanded={isUserMenuOpen}
-                        onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
-                      >
-                        <UserAvatar user={sessionUser} />
-                        <span className="hidden max-w-28 truncate text-foreground sm:inline">
-                          {sessionFirstName}
-                        </span>
-                        {sessionLoadError ? (
-                          <TriangleAlert
-                            className="size-3.5 text-warning"
-                            aria-label="Could not verify your session"
-                          />
-                        ) : null}
-                        <ChevronDown
-                          className="size-3.5 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                      </button>
-
-                      {isUserMenuOpen ? (
-                        <div
-                          role="menu"
-                          className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-surface-md"
-                        >
-                          <div className="border-b border-border px-3 py-3">
-                            <p className="truncate text-sm font-semibold text-foreground">
-                              {sessionDisplayName}
-                            </p>
-                            <p className="mt-1 truncate text-xs text-muted-foreground">
-                              {sessionUser.email}
-                            </p>
-                            {sessionLoadError ? (
-                              <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
-                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
-                                Could not verify your session — sign out and back in if things
-                                look wrong.
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="grid gap-1 p-1.5">
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                              onClick={openSettings}
-                            >
-                              <Settings className="size-4" aria-hidden="true" />
-                              Settings
-                            </button>
-                            <button
-                              type="button"
-                              role="menuitem"
-                              className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-danger transition hover:bg-danger-muted"
-                              onClick={handleLogout}
-                            >
-                              <LogOut className="size-4" aria-hidden="true" />
-                              Log out
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => openSection(item.id)}
+                            className={`flex items-center gap-2.5 rounded-md border px-2 py-2 text-left text-sm font-medium transition ${
+                              isActive
+                                ? 'border-border bg-surface-raised text-foreground'
+                                : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                          >
+                            <Icon className="size-4" aria-hidden="true" />
+                            <span className="truncate">{item.label}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
-              )}
+                ))}
+              </div>
+            </nav>
+          </aside>
 
-              {selectedBot ? (
-                <BotDetailScreen
-                  activeTab={selectedBotTab}
-                  activeConfigurationPanel={selectedBotConfigurationPanel}
-                  bot={selectedBot}
-                  onBack={closeBotDetail}
-                  onTabChange={changeBotTab}
-                  onConfigurationPanelChange={changeBotConfigurationPanel}
-                  onBotUpdated={replaceBot}
-                  onOpenModelProviders={openModelProviders}
-                />
-              ) : activeItemId === 'overview' ? (
-                <OverviewDashboard bots={bots} activityDays={activityDays} />
-              ) : activeItemId === 'bots' ? (
-                <div className="grid gap-4">
-                  {botsMessage ? (
-                    <div
-                      className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
-                        botsMessage.tone === 'danger'
-                          ? 'border-danger/40 bg-danger-muted text-danger'
-                          : 'border-warning/40 bg-warning-muted text-warning'
-                      }`}
-                    >
-                      <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                      <span>{botsMessage.text}</span>
-                    </div>
-                  ) : null}
-                  <BotsListScreen
-                    bots={bots}
-                    initialQuery={botsInitialQuery}
-                    onCreateBot={() => setIsCreateBotOpen(true)}
-                    onOpenBot={openBot}
-                  />
-                </div>
-              ) : activeItemId === 'provider-keys' ? (
-                <ProviderCredentialsScreen
-                  onOpenLinkedBots={openLinkedBots}
-                  onCredentialsChanged={() => void loadBots()}
-                />
-              ) : activeItemId === 'conversations' ? (
-                <ConversationsScreen />
-              ) : activeItemId === 'settings' ? (
-                <SettingsScreen user={sessionUser} />
-              ) : (
-                <Panel>
-                  <PanelBody className="grid gap-6 md:grid-cols-[1fr_320px]">
-                    <div>
-                      <PanelTitle>{activeItem.label} surface</PanelTitle>
-                      <PanelDescription>
-                        This placeholder keeps the shell stable while the dedicated screen task
-                        fills in the production UI.
-                      </PanelDescription>
-                      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-md border border-border bg-surface-raised p-4">
-                          <p className="text-xs text-muted-foreground">Environment</p>
-                          <p className="mt-2 text-sm font-semibold">Production</p>
-                        </div>
-                        <div className="rounded-md border border-border bg-surface-raised p-4">
-                          <p className="text-xs text-muted-foreground">Account</p>
-                          <p className="mt-2 text-sm font-semibold">Default workspace</p>
-                        </div>
-                        <div className="rounded-md border border-border bg-surface-raised p-4">
-                          <p className="text-xs text-muted-foreground">Status</p>
-                          <p className="mt-2 text-sm font-semibold text-success">Ready</p>
-                        </div>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <main className="min-w-0 flex-1 overflow-x-clip overflow-y-auto">
+              <div className="mx-auto w-full min-w-0 max-w-6xl px-4 py-6 md:px-8 md:py-8">
+                {selectedBot ? null : (
+                  <div className="mb-6 flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0">
+                      <div className="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+                        <ActiveIcon className="size-4 text-primary" aria-hidden="true" />
+                        <span className="min-w-0 truncate">Default workspace</span>
                       </div>
-                    </div>
-
-                    <div className="rounded-lg border border-border bg-background p-4">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="size-4 text-success" aria-hidden="true" />
-                        <p className="text-sm font-semibold">OAuth session active</p>
-                      </div>
-                      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                        The shell is shown only after the existing auth return flow completes.
-                        Future backend session checks can replace this placeholder gate without
-                        changing the navigation layout.
+                      <h1 className="break-words text-2xl font-semibold tracking-normal text-foreground md:text-3xl">
+                        {activeItemId === 'overview'
+                          ? `Good afternoon, ${sessionFirstName}`
+                          : activeItem.label}
+                      </h1>
+                      <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground">
+                        {activeItemId === 'overview'
+                          ? 'Create and manage multiple bots from your account.'
+                          : activeItem.description}
                       </p>
                     </div>
-                  </PanelBody>
-                </Panel>
-              )}
-            </div>
-          </main>
-          {isCreateBotOpen ? (
-            <CreateBotModal
-              onClose={() => setIsCreateBotOpen(false)}
-              onBotCreated={(bot) => {
-                replaceBot(bot);
-                applyDashboardRoute(getCreatedBotDashboardRoute(bot.id));
-              }}
-              onOpenModelProviders={openModelProviders}
-            />
-          ) : null}
+
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        onClick={toggleTheme}
+                        aria-label={`Switch to ${nextTheme} mode`}
+                      >
+                        <ThemeIcon className="size-4" aria-hidden="true" />
+                        {nextTheme === 'light' ? 'Day mode' : 'Night mode'}
+                      </Button>
+                      <span className="hidden items-center rounded-md border border-border px-3 py-2 text-sm text-muted-foreground md:inline-flex">
+                        Last 30 days
+                      </span>
+                      <Button size="md" onClick={() => setIsCreateBotOpen(true)}>
+                        <Bot className="size-4" aria-hidden="true" />
+                        Create bot
+                      </Button>
+                      <div className="relative min-w-0">
+                        <button
+                          type="button"
+                          className="flex h-9 items-center gap-2 rounded-md border border-border bg-surface-raised px-2.5 text-left text-sm font-semibold shadow-surface-sm transition hover:border-primary/50 hover:bg-muted"
+                          aria-haspopup="menu"
+                          aria-expanded={isUserMenuOpen}
+                          onClick={() => setIsUserMenuOpen((isOpen) => !isOpen)}
+                        >
+                          <UserAvatar user={sessionUser} />
+                          <span className="hidden max-w-28 truncate text-foreground sm:inline">
+                            {sessionFirstName}
+                          </span>
+                          {sessionLoadError || organisationLoadError ? (
+                            <TriangleAlert
+                              className="size-3.5 text-warning"
+                              aria-label={
+                                sessionLoadError
+                                  ? 'Could not verify your session'
+                                  : 'Could not load your workspace'
+                              }
+                            />
+                          ) : null}
+                          <ChevronDown
+                            className="size-3.5 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </button>
+
+                        {isUserMenuOpen ? (
+                          <div
+                            role="menu"
+                            className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-lg border border-border bg-surface-raised shadow-surface-md"
+                          >
+                            <div className="border-b border-border px-3 py-3">
+                              <p className="truncate text-sm font-semibold text-foreground">
+                                {sessionDisplayName}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {sessionUser.email}
+                              </p>
+                              {sessionLoadError ? (
+                                <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                                  <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+                                  Could not verify your session — sign out and back in if things
+                                  look wrong.
+                                </p>
+                              ) : null}
+                              {!sessionLoadError && organisationLoadError ? (
+                                <p className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                                  <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+                                  Could not load your workspace — try refreshing the page.
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="grid gap-1 p-1.5">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                                onClick={openSettings}
+                              >
+                                <Settings className="size-4" aria-hidden="true" />
+                                Settings
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-danger transition hover:bg-danger-muted"
+                                onClick={handleLogout}
+                              >
+                                <LogOut className="size-4" aria-hidden="true" />
+                                Log out
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedBot ? (
+                  <BotDetailScreen
+                    activeTab={selectedBotTab}
+                    activeConfigurationPanel={selectedBotConfigurationPanel}
+                    bot={selectedBot}
+                    onBack={closeBotDetail}
+                    onTabChange={changeBotTab}
+                    onConfigurationPanelChange={changeBotConfigurationPanel}
+                    onBotUpdated={replaceBot}
+                    onOpenModelProviders={openModelProviders}
+                  />
+                ) : activeItemId === 'overview' ? (
+                  <OverviewDashboard bots={bots} activityDays={activityDays} />
+                ) : activeItemId === 'bots' ? (
+                  <div className="grid gap-4">
+                    {botsMessage ? (
+                      <div
+                        className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+                          botsMessage.tone === 'danger'
+                            ? 'border-danger/40 bg-danger-muted text-danger'
+                            : 'border-warning/40 bg-warning-muted text-warning'
+                        }`}
+                      >
+                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        <span>{botsMessage.text}</span>
+                      </div>
+                    ) : null}
+                    <BotsListScreen
+                      bots={bots}
+                      initialQuery={botsInitialQuery}
+                      onCreateBot={() => setIsCreateBotOpen(true)}
+                      onOpenBot={openBot}
+                    />
+                  </div>
+                ) : activeItemId === 'provider-keys' ? (
+                  <ProviderCredentialsScreen
+                    onOpenLinkedBots={openLinkedBots}
+                    onCredentialsChanged={() => void loadBots()}
+                  />
+                ) : activeItemId === 'conversations' ? (
+                  <ConversationsScreen />
+                ) : activeItemId === 'settings' ? (
+                  <SettingsScreen user={sessionUser} />
+                ) : (
+                  <Panel>
+                    <PanelBody className="grid gap-6 md:grid-cols-[1fr_320px]">
+                      <div>
+                        <PanelTitle>{activeItem.label} surface</PanelTitle>
+                        <PanelDescription>
+                          This placeholder keeps the shell stable while the dedicated screen task
+                          fills in the production UI.
+                        </PanelDescription>
+                        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-md border border-border bg-surface-raised p-4">
+                            <p className="text-xs text-muted-foreground">Environment</p>
+                            <p className="mt-2 text-sm font-semibold">Production</p>
+                          </div>
+                          <div className="rounded-md border border-border bg-surface-raised p-4">
+                            <p className="text-xs text-muted-foreground">Account</p>
+                            <p className="mt-2 text-sm font-semibold">Default workspace</p>
+                          </div>
+                          <div className="rounded-md border border-border bg-surface-raised p-4">
+                            <p className="text-xs text-muted-foreground">Status</p>
+                            <p className="mt-2 text-sm font-semibold text-success">Ready</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-border bg-background p-4">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="size-4 text-success" aria-hidden="true" />
+                          <p className="text-sm font-semibold">OAuth session active</p>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                          The shell is shown only after the existing auth return flow completes.
+                          Future backend session checks can replace this placeholder gate without
+                          changing the navigation layout.
+                        </p>
+                      </div>
+                    </PanelBody>
+                  </Panel>
+                )}
+              </div>
+            </main>
+            {isCreateBotOpen ? (
+              <CreateBotModal
+                onClose={() => setIsCreateBotOpen(false)}
+                onBotCreated={(bot) => {
+                  replaceBot(bot);
+                  applyDashboardRoute(getCreatedBotDashboardRoute(bot.id));
+                }}
+                onOpenModelProviders={openModelProviders}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+    </OrganisationContext.Provider>
   );
 }

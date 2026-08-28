@@ -75,6 +75,25 @@ export const authSessionResponseSchema = z.object({
 
 export type AuthSessionResponse = z.infer<typeof authSessionResponseSchema>;
 
+export const organisationRoleSchema = z.enum(['OWNER', 'ADMIN', 'MEMBER']);
+
+export type OrganisationRole = z.infer<typeof organisationRoleSchema>;
+
+export const organisationMembershipSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  role: organisationRoleSchema,
+});
+
+export type OrganisationMembership = z.infer<typeof organisationMembershipSchema>;
+
+export const listMyOrganisationsResponseSchema = z.object({
+  organisations: z.array(organisationMembershipSchema),
+});
+
+export type ListMyOrganisationsResponse = z.infer<typeof listMyOrganisationsResponseSchema>;
+
 export const oauthStartResponseSchema = z.object({
   provider: authProviderSchema,
   state: z.string(),
