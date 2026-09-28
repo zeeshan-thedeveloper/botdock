@@ -81,12 +81,18 @@ export class ChatService {
       data: { conversationId: conversation.id, role: 'USER', content: input.userMessage },
     });
 
-    const retrieval = await this.retrievalService.retrieve({
-      organisationId: input.organisationId,
-      botId: bot.id,
-      query: input.userMessage,
-      topK: bot.maxSources,
-    });
+    let retrieval;
+    try {
+      retrieval = await this.retrievalService.retrieve({
+        organisationId: input.organisationId,
+        botId: bot.id,
+        query: input.userMessage,
+        topK: bot.maxSources,
+      });
+    } catch (error) {
+      yield this.toErrorEvent(error);
+      return;
+    }
 
     const promptResult = buildPrompt({
       instructions: bot.instructions,
