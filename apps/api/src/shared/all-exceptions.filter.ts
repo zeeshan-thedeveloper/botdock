@@ -75,6 +75,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     }
 
+    // An SSE response (playground/widget streaming) has already sent headers
+    // and is often already ended by the controller's own try/finally by the
+    // time an uncaught error reaches here — calling response.json() in that
+    // case throws ERR_HTTP_HEADERS_SENT and swallows the real error, leaving
+    // the client hanging with no error surfaced at all.
+    if (response.headersSent) {
+      return;
+    }
+
     response.status(status).json({
       statusCode: status,
       path: request.url,
