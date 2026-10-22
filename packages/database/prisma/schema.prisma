@@ -14,6 +14,13 @@ enum OrganisationRole {
   MEMBER
 }
 
+// Which subscription a workspace is on; it sets how many bots it may have
+// (limits live in @botdock/contracts planBotLimits).
+enum OrganisationPlan {
+  FREE
+  PRO
+}
+
 enum BotStatus {
   DRAFT
   PUBLISHED
@@ -97,6 +104,7 @@ model User {
   providerCredentialsCreated ProviderCredential[] @relation("ProviderCredentialCreatedBy")
   botVersionsPublished       BotVersion[]         @relation("BotVersionPublishedBy")
   allowedDomainsCreated      AllowedDomain[]      @relation("AllowedDomainCreatedBy")
+  upgradeRequests            UpgradeRequest[]
 
   @@map("users")
 }
@@ -138,11 +146,12 @@ model AuthSession {
 }
 
 model Organisation {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  slug      String           @unique
+  plan      OrganisationPlan @default(FREE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   members             OrganisationMember[]
   bots                Bot[]
@@ -155,8 +164,27 @@ model Organisation {
   botVersions         BotVersion[]
   botDeployments      BotDeployment[]
   allowedDomains      AllowedDomain[]
+  upgradeRequest      UpgradeRequest?
 
   @@map("organisations")
+}
+
+/// A workspace asking for more bots than its plan includes. Recorded to gauge
+/// demand before paid plans launch; one row per workspace, and asking again
+/// updates it.
+model UpgradeRequest {
+  id             String   @id @default(cuid())
+  organisationId String   @unique
+  userId         String
+  message        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("upgrade_requests")
 }
 
 model OrganisationMember {

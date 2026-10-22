@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type {
@@ -16,8 +17,10 @@ import type {
   BotStats,
   CreateBotInput,
   ModelProvider,
+  OrganisationPlanUsage,
   UpdateBotInput,
 } from '@botdock/contracts';
+import { botLimitReachedErrorCode, planBotLimits, proPlanMonthlyPriceEur } from '@botdock/contracts';
 import { Prisma } from '@botdock/database';
 import { PrismaService } from '../database/prisma.service.js';
 
@@ -65,6 +68,8 @@ type StoredBot = {
 };
 
 type ModelConfigInput = NonNullable<UpdateBotInput['modelConfig']>;
+type PlanUsageClient = Pick<Prisma.TransactionClient, 'organisation' | 'bot'>;
+type PlanLimitUsage = Omit<OrganisationPlanUsage, 'upgradeRequestedAt'>;
 type BehaviorConfigInput = NonNullable<UpdateBotInput['behaviorConfig']>;
 
 const defaultModelConfig: ModelConfigInput = {
@@ -98,6 +103,8 @@ Escalate billing disputes, account access issues, and refund exceptions.`,
 
 @Injectable()
 export class BotsService {
+  private readonly logger = new Logger(BotsService.name);
+
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async listBots(organisationId: string, userId: string): Promise<BotsResponse> {
@@ -134,19 +141,98 @@ export class BotsService {
     };
     await this.ensureActiveCredential(organisationId, modelConfig.providerCredentialId);
 
-    const bot = await this.prisma.bot.create({
-      data: {
-        organisationId,
-        createdById: userId,
-        name: input.name.trim(),
-        description: input.description?.trim() || null,
-        ...this.toBehaviorConfigData(behaviorConfig),
-        ...this.toModelConfigData(modelConfig),
-      },
-      select: this.botSelect(),
+    const bot = await this.prisma.$transaction(async (tx) => {
+      // Lock the workspace row so two simultaneous creates can't both pass the limit check.
+      await tx.$queryRaw`SELECT id FROM "organisations" WHERE id = ${organisationId} FOR UPDATE`;
+
+      const usage = await this.readPlanUsage(tx, organisationId);
+      if (usage.botCount >= usage.botLimit) {
+        throw this.botLimitReached(usage);
+      }
+
+      return tx.bot.create({
+        data: {
+          organisationId,
+          createdById: userId,
+          name: input.name.trim(),
+          description: input.description?.trim() || null,
+          ...this.toBehaviorConfigData(behaviorConfig),
+          ...this.toModelConfigData(modelConfig),
+        },
+        select: this.botSelect(),
+      });
     });
 
     return this.toResponse(bot, this.zeroStats());
+  }
+
+  async getPlanUsage(organisationId: string, userId: string): Promise<OrganisationPlanUsage> {
+    await this.ensureOrganisationMember(organisationId, userId);
+    const [usage, request] = await Promise.all([
+      this.readPlanUsage(this.prisma, organisationId),
+      this.prisma.upgradeRequest.findUnique({
+        where: { organisationId },
+        select: { updatedAt: true },
+      }),
+    ]);
+
+    return { ...usage, upgradeRequestedAt: request?.updatedAt.toISOString() ?? null };
+  }
+
+  /**
+   * Records that a workspace wants more bots. Pro isn't on sale yet, so these
+   * rows are how demand is measured; asking again refreshes the request.
+   */
+  async requestUpgrade(
+    organisationId: string,
+    userId: string,
+    message: string | undefined,
+  ): Promise<OrganisationPlanUsage> {
+    await this.ensureOrganisationMember(organisationId, userId);
+    const trimmedMessage = message?.trim() || null;
+
+    await this.prisma.upgradeRequest.upsert({
+      where: { organisationId },
+      create: { organisationId, userId, message: trimmedMessage },
+      update: { userId, message: trimmedMessage },
+    });
+    this.logger.log(`Upgrade requested: organisation=${organisationId} user=${userId}`);
+
+    return this.getPlanUsage(organisationId, userId);
+  }
+
+  /** Archived bots don't count towards the plan's limit. */
+  private async readPlanUsage(
+    client: PlanUsageClient,
+    organisationId: string,
+  ): Promise<PlanLimitUsage> {
+    const organisation = await client.organisation.findUnique({
+      where: { id: organisationId },
+      select: { plan: true },
+    });
+    if (!organisation) {
+      throw new NotFoundException('Organisation not found.');
+    }
+
+    const botCount = await client.bot.count({
+      where: { organisationId, status: { not: 'ARCHIVED' } },
+    });
+
+    return { plan: organisation.plan, botLimit: planBotLimits[organisation.plan], botCount };
+  }
+
+  private botLimitReached(usage: PlanLimitUsage) {
+    const message =
+      usage.plan === 'FREE'
+        ? `Your Free plan includes ${usage.botLimit} bots. Pro (up to ${planBotLimits.PRO} bots, €${proPlanMonthlyPriceEur}/month) is coming soon — you can request more bots from the Create bot dialog.`
+        : `Your Pro plan includes ${usage.botLimit} bots, and this workspace has reached that limit.`;
+
+    return new ForbiddenException({
+      message,
+      code: botLimitReachedErrorCode,
+      plan: usage.plan,
+      botLimit: usage.botLimit,
+    });
   }
 
   async updateBot(

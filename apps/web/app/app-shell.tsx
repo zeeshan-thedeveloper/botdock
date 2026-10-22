@@ -16,6 +16,7 @@ import {
   allowedDomainSchema,
   allowedDomainsResponseSchema,
   authSessionResponseSchema,
+  botLimitReachedErrorCode,
   botSchema,
   botsResponseSchema,
   chatStreamEventSchema,
@@ -24,6 +25,9 @@ import {
   deploymentInfoSchema,
   knowledgeSourcesResponseSchema,
   listMyOrganisationsResponseSchema,
+  organisationPlanUsageSchema,
+  planBotLimits,
+  proPlanMonthlyPriceEur,
   providerCredentialSchema,
   providerCredentialsResponseSchema,
   type ActivityTimeseriesResponse,
@@ -45,6 +49,7 @@ import {
   type KnowledgeSource,
   type KnowledgeSourceType,
   type ModelProvider,
+  type OrganisationPlanUsage,
   type ProviderCredential,
 } from '@botdock/contracts';
 import {
@@ -5429,6 +5434,16 @@ function ProviderCredentialsScreen({
   );
 }
 
+/** "1 of 2 bots used on the Free plan" */
+export function describePlanUsage(usage: OrganisationPlanUsage): string {
+  const planName = usage.plan === 'PRO' ? 'Pro' : 'Free';
+  return `${usage.botCount} of ${usage.botLimit} bots used on the ${planName} plan`;
+}
+
+export function isAtBotLimit(usage: OrganisationPlanUsage | null): boolean {
+  return usage !== null && usage.botCount >= usage.botLimit;
+}
+
 function CreateBotModal({
   onClose,
   onBotCreated,
@@ -5453,6 +5468,11 @@ function CreateBotModal({
   const [retrievalMode, setRetrievalMode] = useState<BotRetrievalMode>('hybrid');
   const [maxSources, setMaxSources] = useState(6);
   const [citationStyle, setCitationStyle] = useState<BotCitationStyle>('inline_source_chips');
+  const [planUsage, setPlanUsage] = useState<OrganisationPlanUsage | null>(null);
+  const [upgradeMessage, setUpgradeMessage] = useState('');
+  const [isRequestingUpgrade, setIsRequestingUpgrade] = useState(false);
+  const [upgradeRequestError, setUpgradeRequestError] = useState<string | null>(null);
+  const limitReached = isAtBotLimit(planUsage);
   const activeCredentials = credentials.filter((credential) => credential.status === 'active');
   const selectedCredential =
     activeCredentials.find((credential) => credential.id === providerCredentialId) ?? null;
@@ -5515,6 +5535,31 @@ function CreateBotModal({
     };
   }, [apiBaseUrl, workspaceOrganisationId]);
 
+  useEffect(() => {
+    if (!workspaceOrganisationId.trim()) return;
+    let isMounted = true;
+
+    async function loadPlanUsage() {
+      try {
+        const response = await fetch(
+          new URL(`/organisations/${workspaceOrganisationId}/plan`, apiBaseUrl),
+          { credentials: 'include' },
+        );
+        if (!response.ok) return;
+        const usage = organisationPlanUsageSchema.parse(await response.json());
+        if (isMounted) setPlanUsage(usage);
+      } catch {
+        // Only informational here: the API still enforces the limit when the bot is created.
+      }
+    }
+
+    void loadPlanUsage();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, workspaceOrganisationId]);
+
   async function createBot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -5557,6 +5602,20 @@ function CreateBotModal({
       });
 
       if (!response.ok) {
+        const payload = (await response
+          .clone()
+          .json()
+          .catch(() => null)) as (Partial<OrganisationPlanUsage> & { code?: string }) | null;
+        if (payload?.code === botLimitReachedErrorCode && payload.plan && payload.botLimit) {
+          // Another tab or teammate used the last slot: show the limit view instead of an error.
+          setPlanUsage((current) => ({
+            plan: payload.plan!,
+            botLimit: payload.botLimit!,
+            botCount: payload.botLimit!,
+            upgradeRequestedAt: current?.upgradeRequestedAt ?? null,
+          }));
+          return;
+        }
         throw new Error(await parseApiError(response));
       }
 
@@ -5573,181 +5632,291 @@ function CreateBotModal({
     }
   }
 
+  async function requestUpgrade(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsRequestingUpgrade(true);
+    setUpgradeRequestError(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/upgrade-request`, apiBaseUrl),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: upgradeMessage.trim() || undefined }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+      setPlanUsage(organisationPlanUsageSchema.parse(await response.json()));
+    } catch (error) {
+      setUpgradeRequestError(
+        error instanceof Error ? error.message : 'Could not send your request.',
+      );
+    } finally {
+      setIsRequestingUpgrade(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 px-3 py-4 backdrop-blur-sm sm:px-4">
       <Panel className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto">
         <PanelHeader>
-          <PanelTitle>Create bot</PanelTitle>
+          <PanelTitle>{limitReached ? 'Bot limit reached' : 'Create bot'}</PanelTitle>
           <PanelDescription>
-            Start with an active provider key and compact model defaults.
+            {limitReached
+              ? 'Your workspace is using every bot its plan includes.'
+              : 'Start with an active provider key and compact model defaults.'}
+            {planUsage && !limitReached ? ` ${describePlanUsage(planUsage)}.` : null}
           </PanelDescription>
         </PanelHeader>
         <PanelBody>
-          <form className="grid min-w-0 gap-4" onSubmit={(event) => void createBot(event)}>
-            {message ? (
-              <div
-                className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2 text-sm ${
-                  message.tone === 'danger'
-                    ? 'border-danger/40 bg-danger-muted text-danger'
-                    : 'border-warning/40 bg-warning-muted text-warning'
-                }`}
-              >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 break-words">{message.text}</span>
-              </div>
-            ) : null}
+          {limitReached && planUsage ? (
+            planUsage.plan === 'FREE' ? (
+              <form className="grid min-w-0 gap-4" onSubmit={(event) => void requestUpgrade(event)}>
+                <div className="grid gap-2 rounded-md border border-border bg-surface/70 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">
+                    {describePlanUsage(planUsage)}.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    BotDock is in beta. A Pro plan with up to {planBotLimits.PRO} bots (planned at €
+                    {proPlanMonthlyPriceEur} a month) is coming. Request more bots and we&apos;ll
+                    contact you at your account email when it&apos;s ready.
+                  </p>
+                </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Bot name">
+                {planUsage.upgradeRequestedAt ? (
+                  <div className="flex min-w-0 items-start gap-3 rounded-md border border-success/40 bg-success-muted px-3 py-2 text-sm text-success">
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 break-words">
+                      Request received {formatTimestamp(planUsage.upgradeRequestedAt)}. You can send
+                      it again to update your note.
+                    </span>
+                  </div>
+                ) : null}
+
+                {upgradeRequestError ? (
+                  <div className="flex min-w-0 items-start gap-3 rounded-md border border-danger/40 bg-danger-muted px-3 py-2 text-sm text-danger">
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 break-words">{upgradeRequestError}</span>
+                  </div>
+                ) : null}
+
+                <Field label="What would you use more bots for? (optional)">
+                  <TextArea
+                    value={upgradeMessage}
+                    onChange={(event) => setUpgradeMessage(event.target.value)}
+                    maxLength={1000}
+                    rows={3}
+                    placeholder="e.g. one support bot per client site"
+                  />
+                </Field>
+
+                <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+                  <Button variant="secondary" type="button" onClick={onClose}>
+                    Close
+                  </Button>
+                  <Button type="submit" disabled={isRequestingUpgrade}>
+                    {isRequestingUpgrade ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Rocket className="size-4" aria-hidden="true" />
+                    )}
+                    {planUsage.upgradeRequestedAt ? 'Update request' : 'Request more bots'}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="grid min-w-0 gap-4">
+                <div className="grid gap-2 rounded-md border border-border bg-surface/70 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">
+                    {describePlanUsage(planUsage)}.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Archive a bot you no longer need to make room for a new one.
+                  </p>
+                </div>
+                <div className="flex justify-end border-t border-border pt-4">
+                  <Button variant="secondary" type="button" onClick={onClose}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )
+          ) : (
+            <form className="grid min-w-0 gap-4" onSubmit={(event) => void createBot(event)}>
+              {message ? (
+                <div
+                  className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                    message.tone === 'danger'
+                      ? 'border-danger/40 bg-danger-muted text-danger'
+                      : 'border-warning/40 bg-warning-muted text-warning'
+                  }`}
+                >
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 break-words">{message.text}</span>
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Bot name">
+                  <TextInput
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="Docs Assistant"
+                    autoFocus
+                  />
+                </Field>
+                <Field label="Provider credential">
+                  <SelectInput
+                    value={providerCredentialId ?? ''}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => {
+                      const nextCredential =
+                        activeCredentials.find(
+                          (credential) => credential.id === event.target.value,
+                        ) ?? null;
+                      setProviderCredentialId(nextCredential?.id ?? null);
+
+                      if (nextCredential) {
+                        setModel(modelOptionsByProvider[nextCredential.provider][0] ?? model);
+                      }
+                    }}
+                  >
+                    <option value="">
+                      {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
+                    </option>
+                    {activeCredentials.map((credential) => (
+                      <option key={credential.id} value={credential.id}>
+                        {getProviderLabel(credential.provider)} · {credential.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+
+              <Field label="Description">
                 <TextInput
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Docs Assistant"
-                  autoFocus
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Answers product and API questions"
                 />
               </Field>
-              <Field label="Provider credential">
-                <SelectInput
-                  value={providerCredentialId ?? ''}
-                  disabled={modelSelectionDisabled}
-                  onChange={(event) => {
-                    const nextCredential =
-                      activeCredentials.find(
-                        (credential) => credential.id === event.target.value,
-                      ) ?? null;
-                    setProviderCredentialId(nextCredential?.id ?? null);
 
-                    if (nextCredential) {
-                      setModel(modelOptionsByProvider[nextCredential.provider][0] ?? model);
-                    }
-                  }}
+              {activeCredentials.length === 0 && !isLoadingCredentials ? (
+                <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
+                  <span className="min-w-0 break-words">
+                    Create a draft now, then add a validated provider key before publishing.
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={onOpenModelProviders}
+                  >
+                    <KeyRound className="size-4" aria-hidden="true" />
+                    Model Providers
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Model">
+                  <SelectInput
+                    value={model}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => setModel(event.target.value)}
+                  >
+                    {modelOptions.map((modelOption) => (
+                      <option key={modelOption} value={modelOption}>
+                        {modelOption}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label={`Temperature · ${temperature.toFixed(2)}`}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={temperature}
+                    disabled={modelSelectionDisabled}
+                    onChange={(event) => setTemperature(Number(event.target.value))}
+                    className="h-9 w-full accent-primary disabled:cursor-not-allowed disabled:opacity-55"
+                  />
+                </Field>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <Field label="Response length">
+                  <SelectInput
+                    value={responseLength}
+                    onChange={(event) => setResponseLength(event.target.value as BotResponseLength)}
+                  >
+                    {Object.entries(responseLengthLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Retrieval">
+                  <SelectInput
+                    value={retrievalMode}
+                    onChange={(event) => setRetrievalMode(event.target.value as BotRetrievalMode)}
+                  >
+                    {Object.entries(retrievalModeLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+                <Field label="Source budget">
+                  <SelectInput
+                    value={String(maxSources)}
+                    onChange={(event) => setMaxSources(Number(event.target.value))}
+                  >
+                    {[4, 6, 8, 10, 12].map((sourceCount) => (
+                      <option key={sourceCount} value={sourceCount}>
+                        {sourceCount}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </Field>
+              </div>
+
+              <Field label="Citations">
+                <SelectInput
+                  value={citationStyle}
+                  onChange={(event) => setCitationStyle(event.target.value as BotCitationStyle)}
                 >
-                  <option value="">
-                    {isLoadingCredentials ? 'Loading credentials...' : 'Select active credential'}
-                  </option>
-                  {activeCredentials.map((credential) => (
-                    <option key={credential.id} value={credential.id}>
-                      {getProviderLabel(credential.provider)} · {credential.label}
+                  {Object.entries(citationStyleLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
                     </option>
                   ))}
                 </SelectInput>
               </Field>
-            </div>
 
-            <Field label="Description">
-              <TextInput
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Answers product and API questions"
-              />
-            </Field>
-
-            {activeCredentials.length === 0 && !isLoadingCredentials ? (
-              <div className="flex min-w-0 flex-col gap-3 rounded-md border border-warning/40 bg-warning-muted p-3 text-sm text-warning sm:flex-row sm:items-center sm:justify-between">
-                <span className="min-w-0 break-words">
-                  Create a draft now, then add a validated provider key before publishing.
-                </span>
-                <Button variant="secondary" size="sm" type="button" onClick={onOpenModelProviders}>
-                  <KeyRound className="size-4" aria-hidden="true" />
-                  Model Providers
+              <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
+                <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createDisabled}>
+                  {isSaving ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Plus className="size-4" aria-hidden="true" />
+                  )}
+                  Create bot
                 </Button>
               </div>
-            ) : null}
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Model">
-                <SelectInput
-                  value={model}
-                  disabled={modelSelectionDisabled}
-                  onChange={(event) => setModel(event.target.value)}
-                >
-                  {modelOptions.map((modelOption) => (
-                    <option key={modelOption} value={modelOption}>
-                      {modelOption}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label={`Temperature · ${temperature.toFixed(2)}`}>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={temperature}
-                  disabled={modelSelectionDisabled}
-                  onChange={(event) => setTemperature(Number(event.target.value))}
-                  className="h-9 w-full accent-primary disabled:cursor-not-allowed disabled:opacity-55"
-                />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <Field label="Response length">
-                <SelectInput
-                  value={responseLength}
-                  onChange={(event) => setResponseLength(event.target.value as BotResponseLength)}
-                >
-                  {Object.entries(responseLengthLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Retrieval">
-                <SelectInput
-                  value={retrievalMode}
-                  onChange={(event) => setRetrievalMode(event.target.value as BotRetrievalMode)}
-                >
-                  {Object.entries(retrievalModeLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-              <Field label="Source budget">
-                <SelectInput
-                  value={String(maxSources)}
-                  onChange={(event) => setMaxSources(Number(event.target.value))}
-                >
-                  {[4, 6, 8, 10, 12].map((sourceCount) => (
-                    <option key={sourceCount} value={sourceCount}>
-                      {sourceCount}
-                    </option>
-                  ))}
-                </SelectInput>
-              </Field>
-            </div>
-
-            <Field label="Citations">
-              <SelectInput
-                value={citationStyle}
-                onChange={(event) => setCitationStyle(event.target.value as BotCitationStyle)}
-              >
-                {Object.entries(citationStyleLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </SelectInput>
-            </Field>
-
-            <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-end">
-              <Button variant="secondary" type="button" disabled={isSaving} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={createDisabled}>
-                {isSaving ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Plus className="size-4" aria-hidden="true" />
-                )}
-                Create bot
-              </Button>
-            </div>
-          </form>
+            </form>
+          )}
         </PanelBody>
       </Panel>
     </div>

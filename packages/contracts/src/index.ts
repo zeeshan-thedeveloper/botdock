@@ -94,6 +94,38 @@ export const listMyOrganisationsResponseSchema = z.object({
 
 export type ListMyOrganisationsResponse = z.infer<typeof listMyOrganisationsResponseSchema>;
 
+export const organisationPlanSchema = z.enum(['FREE', 'PRO']);
+
+export type OrganisationPlan = z.infer<typeof organisationPlanSchema>;
+
+/** How many non-archived bots a workspace may have on each plan. */
+export const planBotLimits: Record<OrganisationPlan, number> = {
+  FREE: 2,
+  PRO: 10,
+};
+
+/** Planned monthly Pro price, in euros. Pro isn't on sale yet; workspaces can request it. */
+export const proPlanMonthlyPriceEur = 10;
+
+export const organisationPlanUsageSchema = z.object({
+  plan: organisationPlanSchema,
+  botLimit: z.number().int(),
+  botCount: z.number().int(),
+  /** When this workspace last asked for more bots, if it has. */
+  upgradeRequestedAt: z.string().datetime().nullable(),
+});
+
+export type OrganisationPlanUsage = z.infer<typeof organisationPlanUsageSchema>;
+
+export const createUpgradeRequestSchema = z.object({
+  message: z.string().trim().max(1000).optional(),
+});
+
+export type CreateUpgradeRequestInput = z.infer<typeof createUpgradeRequestSchema>;
+
+/** Error code the API returns when a workspace is at its plan's bot limit. */
+export const botLimitReachedErrorCode = 'BOT_LIMIT_REACHED';
+
 export const oauthStartResponseSchema = z.object({
   provider: authProviderSchema,
   state: z.string(),

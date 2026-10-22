@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   areBotConfigurationsEqual,
+  describePlanUsage,
+  isAtBotLimit,
   getCreatedBotDashboardRoute,
   getInitialDashboardRoute,
   getBotSearchText,
@@ -109,7 +111,11 @@ describe('dashboard route state', () => {
       selectedBotConfigurationPanel: 'safety',
     });
 
-    expect(replaceState).toHaveBeenCalledWith(null, '', '/app?section=bots&bot=bot-123&tab=knowledge');
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      '',
+      '/app?section=bots&bot=bot-123&tab=knowledge',
+    );
   });
 
   it('opens newly created bots directly in configuration with a clean default panel', () => {
@@ -214,5 +220,30 @@ describe('bot inventory search metadata', () => {
     expect(searchText).toContain('credential-openai-production');
     expect(searchText).toContain('production openai');
     expect(searchText).toContain('gpt-4o-mini');
+  });
+});
+
+describe('plan usage', () => {
+  it('describes usage per plan', () => {
+    expect(
+      describePlanUsage({ plan: 'FREE', botLimit: 2, botCount: 1, upgradeRequestedAt: null }),
+    ).toBe('1 of 2 bots used on the Free plan');
+    expect(
+      describePlanUsage({ plan: 'PRO', botLimit: 10, botCount: 4, upgradeRequestedAt: null }),
+    ).toBe('4 of 10 bots used on the Pro plan');
+  });
+
+  it('is at the limit once every included bot is used', () => {
+    expect(isAtBotLimit(null)).toBe(false);
+    expect(isAtBotLimit({ plan: 'FREE', botLimit: 2, botCount: 1, upgradeRequestedAt: null })).toBe(
+      false,
+    );
+    expect(isAtBotLimit({ plan: 'FREE', botLimit: 2, botCount: 2, upgradeRequestedAt: null })).toBe(
+      true,
+    );
+    // Workspaces created before the limit can be over it; they still can't add more.
+    expect(isAtBotLimit({ plan: 'FREE', botLimit: 2, botCount: 5, upgradeRequestedAt: null })).toBe(
+      true,
+    );
   });
 });
