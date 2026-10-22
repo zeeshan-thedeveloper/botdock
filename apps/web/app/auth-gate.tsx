@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   authProvidersResponseSchema,
@@ -218,7 +219,11 @@ export function AuthGate({ children }: { children?: ReactNode }) {
             className="relative mx-auto flex min-h-[22rem] w-full max-w-[32rem] items-center justify-center xl:min-h-[25rem]"
             aria-hidden="true"
           >
-            <svg className="absolute inset-x-4 top-16 h-80 text-border" viewBox="0 0 420 320" fill="none">
+            <svg
+              className="absolute inset-x-4 top-16 h-80 text-border"
+              viewBox="0 0 420 320"
+              fill="none"
+            >
               <path d="M60 60L210 140L360 50" stroke="currentColor" strokeWidth="1.5" />
               <path d="M210 140L120 260M210 140L320 250" stroke="currentColor" strokeWidth="1.5" />
               <path d="M210 140V230" stroke="hsl(var(--color-primary))" strokeWidth="1.5" />
@@ -357,6 +362,24 @@ export function AuthGate({ children }: { children?: ReactNode }) {
                 Checking provider availability...
               </p>
             ) : null}
+
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">
+              By continuing you agree to the{' '}
+              <Link
+                href="/terms"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link
+                href="/privacy"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                Privacy Policy
+              </Link>
+              .
+            </p>
 
             <div className="mt-5 grid gap-1.5 rounded-lg border border-border bg-surface/70 p-3 text-xs leading-5 text-muted-foreground">
               <div className="flex items-center gap-2">
