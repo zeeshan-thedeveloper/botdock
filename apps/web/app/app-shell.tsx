@@ -115,6 +115,7 @@ import {
   TextInput,
 } from '@botdock/ui';
 import type { LucideIcon } from 'lucide-react';
+import { DeploymentPreview, maskDeploymentId } from './deployment-preview';
 
 type NavItem = {
   id: string;
@@ -4176,10 +4177,13 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
                       {copied ? 'Copied' : 'Copy'}
                     </Button>
                   </div>
-                  <CodeBlock className="text-xs">{deployment.embedSnippet}</CodeBlock>
+                  <CodeBlock className="text-xs">
+                    {maskDeploymentId(deployment.embedSnippet, deployment.deploymentId)}
+                  </CodeBlock>
                   <p className="text-xs text-muted-foreground">
                     Paste this on any site you want the widget to appear on — it will only respond
-                    on domains listed below.
+                    on domains listed below. The deployment ID is hidden here; Copy includes it in
+                    full.
                   </p>
                 </div>
               ) : (
@@ -4192,6 +4196,25 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
           ) : null}
         </PanelBody>
       </Panel>
+
+      {deployment?.embedSnippet ? (
+        <Panel className="min-w-0">
+          <PanelHeader>
+            <PanelTitle>Preview</PanelTitle>
+            <PanelDescription>
+              How visitors will see this bot on a desktop site, a mobile site, and inside an Android
+              app.
+            </PanelDescription>
+          </PanelHeader>
+          <PanelBody>
+            <DeploymentPreview
+              embedSnippet={deployment.embedSnippet}
+              deploymentId={deployment.deploymentId}
+              allowedDomainPatterns={domains.map((domain) => domain.pattern)}
+            />
+          </PanelBody>
+        </Panel>
+      ) : null}
 
       <Panel className="min-w-0">
         <PanelHeader>
