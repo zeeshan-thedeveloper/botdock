@@ -13,7 +13,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { CreateBotInput, UpdateBotInput } from '@botdock/contracts';
+import type { CreateBotInput, CreateUpgradeRequestInput, UpdateBotInput } from '@botdock/contracts';
 
 class BotModelConfigDto {
   @IsOptional()
@@ -141,4 +141,11 @@ export class UpdateBotDto implements UpdateBotInput {
   @ValidateNested()
   @Type(() => BotBehaviorConfigDto)
   behaviorConfig?: BotBehaviorConfigDto;
+}
+
+export class CreateUpgradeRequestDto implements CreateUpgradeRequestInput {
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  message?: string;
 }

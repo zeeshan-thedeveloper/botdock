@@ -7,6 +7,7 @@ const now = new Date('2026-07-19T10:00:00.000Z');
 function createPrismaMock() {
   const prisma = {
     bot: {
+      count: vi.fn().mockResolvedValue(0),
       create: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -19,8 +20,15 @@ function createPrismaMock() {
     botDeployment: {
       upsert: vi.fn(),
     },
+    organisation: {
+      findUnique: vi.fn().mockResolvedValue({ plan: 'FREE' }),
+    },
     organisationMember: {
       findUnique: vi.fn(),
+    },
+    upgradeRequest: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn().mockResolvedValue({}),
     },
     providerCredential: {
       findFirst: vi.fn(),
@@ -370,6 +378,114 @@ describe('BotsService', () => {
       provider: 'openai',
       credentialLabel: 'Production OpenAI',
       model: 'gpt-4o',
+    });
+  });
+
+  describe('plan bot limit', () => {
+    const createInput = { organisationId: 'org-1', name: 'Another bot' };
+
+    beforeEach(() => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+      prisma.bot.create.mockResolvedValue({
+        id: 'bot-3',
+        organisationId: 'org-1',
+        name: 'Another bot',
+        description: null,
+        status: 'DRAFT',
+        initials: 'AB',
+        welcomeMessage: 'Welcome.',
+        instructions: 'Help.',
+        tone: 'Friendly',
+        handoffBehavior: 'Escalate',
+        providerCredentialId: null,
+        model: 'gpt-4o-mini',
+        temperature: 0.35,
+        responseLength: 'balanced',
+        retrievalMode: 'hybrid',
+        maxSources: 6,
+        citationStyle: 'inline_source_chips',
+        widgetTheme: 'Dark system default',
+        widgetPosition: 'Bottom right',
+        strictKnowledge: true,
+        promptInjectionProtection: true,
+        piiRedaction: true,
+        collectFeedback: true,
+        humanHandoff: true,
+        createdAt: now,
+        updatedAt: now,
+        providerCredential: null,
+      });
+    });
+
+    it('refuses a third bot on the Free plan with a machine-readable code', async () => {
+      prisma.bot.count.mockResolvedValue(2);
+
+      const error = await service.createBot('user-1', createInput).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).getResponse()).toMatchObject({
+        code: 'BOT_LIMIT_REACHED',
+        plan: 'FREE',
+        botLimit: 2,
+      });
+      expect(prisma.bot.create).not.toHaveBeenCalled();
+    });
+
+    it('locks the workspace row and ignores archived bots when counting', async () => {
+      prisma.bot.count.mockResolvedValue(1);
+
+      await service.createBot('user-1', createInput);
+
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.bot.count).toHaveBeenCalledWith({
+        where: { organisationId: 'org-1', status: { not: 'ARCHIVED' } },
+      });
+      expect(prisma.bot.create).toHaveBeenCalled();
+    });
+
+    it('allows up to ten bots on the Pro plan', async () => {
+      prisma.organisation.findUnique.mockResolvedValue({ plan: 'PRO' });
+      prisma.bot.count.mockResolvedValue(9);
+      await expect(service.createBot('user-1', createInput)).resolves.toMatchObject({ id: 'bot-3' });
+
+      prisma.bot.count.mockResolvedValue(10);
+      await expect(service.createBot('user-1', createInput)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('reports plan usage to workspace members only', async () => {
+      prisma.bot.count.mockResolvedValue(2);
+      await expect(service.getPlanUsage('org-1', 'user-1')).resolves.toEqual({
+        plan: 'FREE',
+        botLimit: 2,
+        botCount: 2,
+        upgradeRequestedAt: null,
+      });
+
+      prisma.organisationMember.findUnique.mockResolvedValue(null);
+      await expect(service.getPlanUsage('org-1', 'user-2')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('records one upgrade request per workspace and reports when it was made', async () => {
+      prisma.bot.count.mockResolvedValue(2);
+      prisma.upgradeRequest.findUnique.mockResolvedValue({ updatedAt: now });
+
+      const usage = await service.requestUpgrade('org-1', 'user-1', '  Need a bot per client  ');
+
+      expect(prisma.upgradeRequest.upsert).toHaveBeenCalledWith({
+        where: { organisationId: 'org-1' },
+        create: { organisationId: 'org-1', userId: 'user-1', message: 'Need a bot per client' },
+        update: { userId: 'user-1', message: 'Need a bot per client' },
+      });
+      expect(usage.upgradeRequestedAt).toBe(now.toISOString());
+    });
+
+    it('refuses upgrade requests from non-members', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue(null);
+
+      await expect(service.requestUpgrade('org-1', 'user-2', undefined)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.upgradeRequest.upsert).not.toHaveBeenCalled();
     });
   });
 
