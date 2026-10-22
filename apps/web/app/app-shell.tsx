@@ -193,8 +193,7 @@ type BotDetailTab =
   | 'knowledge'
   | 'playground'
   | 'conversations'
-  | 'deployments'
-  | 'settings';
+  | 'deployments';
 type BotConfigurationPanelId = 'identity' | 'instructions' | 'model' | 'conversation' | 'safety';
 
 type BotRow = {
@@ -436,7 +435,6 @@ const botDetailTabs: Array<{ id: BotDetailTab; label: string }> = [
   { id: 'playground', label: 'Playground' },
   { id: 'conversations', label: 'Conversations' },
   { id: 'deployments', label: 'Deployments' },
-  { id: 'settings', label: 'Settings' },
 ];
 
 type DashboardRouteState = {
@@ -4301,27 +4299,6 @@ function BotDetailDeployments({ bot }: { bot: BotRow }) {
   );
 }
 
-function BotDetailPlaceholder({ bot, tab }: { bot: BotRow; tab: BotDetailTab }) {
-  const tabLabel = botDetailTabs.find((item) => item.id === tab)?.label ?? 'Section';
-
-  return (
-    <Panel>
-      <PanelBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <PanelTitle>
-            {tabLabel} for {bot.name}
-          </PanelTitle>
-          <PanelDescription>
-            This tab is present for navigation continuity. Its full production UI is tracked in a
-            later task.
-          </PanelDescription>
-        </div>
-        <Badge tone="neutral">Placeholder</Badge>
-      </PanelBody>
-    </Panel>
-  );
-}
-
 function BotsListCard({ bot, onOpenBot }: { bot: BotRow; onOpenBot: (botId: string) => void }) {
   return (
     <button
@@ -4592,14 +4569,6 @@ function BotDetailScreen({
       ) : null}
       {activeTab === 'conversations' ? <BotDetailConversations botId={bot.id} /> : null}
       {activeTab === 'deployments' ? <BotDetailDeployments bot={bot} /> : null}
-      {activeTab !== 'overview' &&
-      activeTab !== 'configuration' &&
-      activeTab !== 'knowledge' &&
-      activeTab !== 'playground' &&
-      activeTab !== 'conversations' &&
-      activeTab !== 'deployments' ? (
-        <BotDetailPlaceholder bot={bot} tab={activeTab} />
-      ) : null}
 
       {isPublishModalOpen ? (
         <PublishBotModal
