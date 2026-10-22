@@ -1,12 +1,5 @@
 import Link from 'next/link';
-import {
-  Blocks,
-  Braces,
-  Gauge,
-  Layers,
-  Radar,
-  Zap,
-} from 'lucide-react';
+import { Blocks, Braces, Gauge, Layers, Radar, Zap } from 'lucide-react';
 
 const features = [
   {
@@ -99,8 +92,8 @@ export default function LandingPage() {
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-muted-foreground">
           BotDock gives you a single dashboard to build configurable AI chatbots, ground them in
-          your own knowledge, and embed them into any website — with full observability into
-          every conversation.
+          your own knowledge, and embed them into any website — with full observability into every
+          conversation.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -151,7 +144,10 @@ export default function LandingPage() {
                   ['Positive feedback', '94%'],
                   ['Est. cost', '$6.40'],
                 ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-border bg-surface-raised p-3.5">
+                  <div
+                    key={label}
+                    className="rounded-lg border border-border bg-surface-raised p-3.5"
+                  >
                     <p className="text-[11px] text-muted-foreground">{label}</p>
                     <p className="mt-1.5 text-xl font-semibold">{value}</p>
                   </div>
@@ -180,16 +176,12 @@ export default function LandingPage() {
               Everything a production chatbot needs
             </h2>
             <p className="mt-3 text-sm text-muted-foreground">
-              One platform to configure, ground, test, deploy, and observe — no glue code
-              required.
+              One platform to configure, ground, test, deploy, and observe — no glue code required.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {features.map(({ icon: Icon, tone, title, description }) => (
-              <div
-                key={title}
-                className="rounded-xl border border-border bg-surface-raised p-6"
-              >
+              <div key={title} className="rounded-xl border border-border bg-surface-raised p-6">
                 <div className={`mb-4 flex size-9 items-center justify-center rounded-md ${tone}`}>
                   <Icon className="size-4.5" aria-hidden="true" />
                 </div>
@@ -211,9 +203,9 @@ export default function LandingPage() {
               Embed in minutes, not sprints
             </h2>
             <p className="text-sm leading-7 text-muted-foreground">
-              Publish a bot, then drop a single script tag on any site. Every request is scoped
-              to your allowed domains, so a stolen snippet can&apos;t spend your provider key
-              anywhere else.
+              Publish a bot, then drop a single script tag on any site. Every request is scoped to
+              your allowed domains, so a stolen snippet can&apos;t spend your provider key anywhere
+              else.
             </p>
           </div>
           <div className="rounded-xl border border-border bg-surface p-5">
@@ -259,7 +251,17 @@ export default function LandingPage() {
           <div className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
             B
           </div>
-          <span className="text-sm text-muted-foreground">© {new Date().getFullYear()} BotDock</span>
+          <span className="text-sm text-muted-foreground">
+            © {new Date().getFullYear()} BotDock
+          </span>
+          <nav className="ml-auto flex gap-4 text-sm text-muted-foreground">
+            <Link href="/privacy" className="hover:text-foreground">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-foreground">
+              Terms
+            </Link>
+          </nav>
         </div>
       </footer>
     </main>
