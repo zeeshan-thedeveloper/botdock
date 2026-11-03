@@ -6,9 +6,50 @@ BotDock is a multi-tenant platform for configuring, publishing, embedding, and m
 
 Teams need chatbot infrastructure that behaves like a product platform rather than a one-off OpenAI demo. BotDock is built around tenant isolation, bring-your-own-key (BYOK) model billing, versioned publishing, embeddable runtime delivery, retrieval-grounded responses, streaming chat, and conversation inspection.
 
+## Features
+
+What you can actually do with BotDock, end to end:
+
+- **Sign in and get a workspace instantly** — Google or GitHub OAuth, with a personal organisation auto-provisioned on first signup (no separate "create a workspace" step).
+- **Bring your own OpenAI key (BYOK)** — connect your own API key once, encrypted at rest (AES-256-GCM), used for both chat and embeddings across every bot in the org.
+- **Configure a bot** — identity, system instructions, model/temperature, appearance, and safety settings, with a draft/publish split so edits don't affect what's live.
+- **Give it knowledge (RAG)** — upload text or file sources; they're chunked, embedded, and indexed in pgvector asynchronously, then retrieved per-query and scoped strictly to your organisation and bot.
+- **Test it live in a playground** — authenticated three-panel UI: streamed token-by-token responses, retrieved source chunks, and a debug trace (prompt, latency, tokens, cost) for every turn.
+- **Publish and embed it anywhere** — one click creates an immutable, versioned deployment; register the domains allowed to embed it, then drop in a `<script>` tag (or use `@botdock/sdk` directly) to get a real, streaming, citation-grounded chat widget on any site — rate-limited and origin-restricted so only your own domains and your own OpenAI spend are on the hook.
+- **Inspect every conversation afterward** — full transcript with citations, plus per-message model, token count, latency, and cost, across both playground and widget traffic.
+
+## AI Engineering Highlights
+
+BotDock is a production RAG system, not a wrapper around a chat endpoint. The AI work spans the full loop: ingestion, retrieval, grounded generation, streaming, and observability.
+
+### Retrieval-Augmented Generation (RAG)
+
+- **Async ingestion pipeline** — a BullMQ worker parses, chunks (~1200 characters with ~150 character overlap so facts split across a boundary stay retrievable), embeds with `text-embedding-3-small`, and stores vectors. Re-ingestion is idempotent, and every source moves through an explicit `PROCESSING → READY / FAILED` lifecycle.
+- **Vector search on pgvector** — `vector(1536)` embeddings behind an HNSW index with cosine distance, kept in PostgreSQL alongside the relational data instead of a separate vector database.
+- **Tenant-safe retrieval** — every query is scoped to organisation + bot + embedding model (vectors from different models are never compared), filtered by a minimum relevance score, capped at a per-bot top-k, and packed into a fixed context budget.
+- **Grounded generation** — a layered prompt builder (safety preamble → retrieved context → conversation history), with a strict-knowledge mode that controls how the bot answers when retrieval finds nothing relevant.
+- **Citations end to end** — sources are streamed to the client as typed `citation` events, persisted per message, and shown in both the widget and the conversation inspector.
+
+### LLM Application Engineering
+
+- **Streaming runtime** — token-by-token Server-Sent Events over `POST` with a typed event protocol (`token`, `citation`, `trace`, `usage`, `done`, `error`), heartbeats, and abort propagation all the way to the model provider.
+- **Provider abstraction** — `packages/ai-core` wraps OpenAI with retries, timeouts, error mapping, and cost estimation; an OpenAI-compatible base-URL override lets the whole pipeline run against a mock server in tests.
+- **Observability per turn** — a playground debug trace (retrieved chunks, prompt preview, model) plus prompt/completion tokens, latency, and estimated cost recorded for every message.
+- **Multi-tenant BYOK** — each organisation's own OpenAI key (AES-256-GCM encrypted at rest) pays for both chat and embeddings; a revoked key fails immediately, even for already-published bots.
+- **Safe failure modes** — raw provider errors are never forwarded to visitors, the public widget never sees internals, and cancelled turns don't leave misleading usage records.
+
+### Built With Agentic AI Development
+
+BotDock was developed with an agent-driven engineering workflow using Claude Code:
+
+- Work is broken into small, spec'd tasks, each implemented on its own branch by an AI coding agent against a written specification.
+- Every change goes through a pull request gated by CI (lint, typecheck, tests, build) before it can merge.
+- Features are verified live, end to end, not just unit-tested, before they're marked done.
+- Architecture decisions and docs (`docs/architecture/`, `docs/decisions/`) are kept current so both humans and agents work from the same source of truth.
+
 ## Main Product Flow
 
-1. User creates an account and joins an organisation (Google or GitHub OAuth).
+1. User creates an account (Google or GitHub OAuth); a personal organisation is auto-provisioned on signup.
 2. Organisation connects its own OpenAI API key (BYOK — see `docs/architecture/byok-and-configuration.md`).
 3. Organisation creates and configures a chatbot: identity, instructions, model, appearance, safety.
 4. Owner adds knowledge sources and tests the bot in an authenticated playground, with streaming responses and a debug trace.
@@ -34,6 +75,7 @@ This loop is implemented end to end and verified live (not just unit-tested) at 
 
 - TypeScript monorepo with pnpm workspaces and Turborepo.
 - Next.js App Router, Tailwind CSS, Zod.
+- OpenAI (chat completions + `text-embedding-3-small`) behind a provider abstraction.
 - NestJS, Prisma, PostgreSQL with pgvector, Redis (BullMQ ingestion worker + widget rate limiting), MinIO/S3, Swagger/OpenAPI.
 - Vite for widget and demo-site bundles.
 - ESLint, Prettier, Vitest, GitHub Actions CI.
