@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { BrandLogo } from './brand-logo';
 
 export const LEGAL_CONTACT_EMAIL = 'zeeshanahmedd0010@gmail.com';
 export const LEGAL_OPERATOR = 'Zeeshan Ahmed';
@@ -49,11 +50,8 @@ export function LegalPage({
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border px-6 py-4">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-2 text-sm font-semibold">
-            <span className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-              B
-            </span>
-            BotDock
+          <Link href="/" aria-label="BotDock home">
+            <BrandLogo markClassName="size-7" textClassName="text-sm" />
           </Link>
           <nav className="flex gap-4 text-sm text-muted-foreground">
             <Link href="/privacy" className="hover:text-foreground">

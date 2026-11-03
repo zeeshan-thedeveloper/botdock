@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Blocks, Braces, Gauge, Layers, Radar, Zap } from 'lucide-react';
+import { BrandLogo, BrandMark } from './brand-logo';
 
 const features = [
   {
@@ -52,12 +53,7 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-8">
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-                B
-              </div>
-              <span className="text-[15px] font-semibold">BotDock</span>
-            </div>
+            <BrandLogo markClassName="size-9" textClassName="text-lg" />
             <a
               href="#features"
               className="hidden text-sm text-muted-foreground transition hover:text-foreground sm:inline"
@@ -248,9 +244,7 @@ export default function LandingPage() {
 
       <footer className="border-t border-border px-6 py-8">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
-          <div className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-            B
-          </div>
+          <BrandMark className="size-6 text-foreground" />
           <span className="text-sm text-muted-foreground">
             © {new Date().getFullYear()} BotDock
           </span>
