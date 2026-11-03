@@ -22,6 +22,7 @@ import {
   Server,
   ShieldCheck,
 } from 'lucide-react';
+import { BrandLogo } from './brand-logo';
 
 const providerCopy: Record<
   AuthProvider,
@@ -207,12 +208,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
     <main className="h-dvh overflow-hidden bg-background text-foreground">
       <section className="grid h-full min-h-0 lg:grid-cols-[1.08fr_1fr]">
         <aside className="relative hidden min-h-0 overflow-hidden border-r border-border bg-surface px-10 py-8 lg:flex lg:flex-col lg:justify-between xl:px-14">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-              B
-            </div>
-            <p className="text-[15px] font-semibold">BotDock</p>
-          </div>
+          <BrandLogo markClassName="size-9" textClassName="text-lg" />
 
           {/* Purely illustrative — no specific counts/names/statuses, so nothing here can misrepresent real account state. */}
           <div
@@ -294,12 +290,7 @@ export function AuthGate({ children }: { children?: ReactNode }) {
 
         <div className="flex min-h-0 items-center justify-center overflow-hidden px-5 py-5 sm:px-8 lg:px-10">
           <section className="w-full max-w-[23rem]">
-            <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-                B
-              </div>
-              <p className="text-[15px] font-semibold">BotDock</p>
-            </div>
+            <BrandLogo className="mb-6 lg:hidden" markClassName="size-9" textClassName="text-lg" />
 
             <div>
               <h2 className="text-xl font-semibold">Sign in to your workspace</h2>

@@ -120,6 +120,7 @@ import {
   TextInput,
 } from '@botdock/ui';
 import type { LucideIcon } from 'lucide-react';
+import { BrandLogo } from './brand-logo';
 import { DeploymentPreview, maskDeploymentId } from './deployment-preview';
 
 type NavItem = {
@@ -6238,11 +6239,8 @@ export function AppShell() {
       <div className="min-h-screen overflow-x-clip bg-background text-foreground">
         <div className="flex min-h-screen min-w-0">
           <aside className="hidden w-60 shrink-0 border-r border-border bg-surface lg:flex lg:flex-col">
-            <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-4">
-              <div className="flex size-7 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-                B
-              </div>
-              <span className="text-sm font-semibold">BotDock</span>
+            <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
+              <BrandLogo textClassName="text-base" />
             </div>
 
             <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Primary navigation">
@@ -6312,9 +6310,6 @@ export function AppShell() {
                         <ThemeIcon className="size-4" aria-hidden="true" />
                         {nextTheme === 'light' ? 'Day mode' : 'Night mode'}
                       </Button>
-                      <span className="hidden items-center rounded-md border border-border px-3 py-2 text-sm text-muted-foreground md:inline-flex">
-                        Last 30 days
-                      </span>
                       <Button size="md" onClick={() => setIsCreateBotOpen(true)}>
                         <Bot className="size-4" aria-hidden="true" />
                         Create bot
