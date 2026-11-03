@@ -20,9 +20,14 @@ import type {
   OrganisationPlanUsage,
   UpdateBotInput,
 } from '@botdock/contracts';
-import { botLimitReachedErrorCode, planBotLimits, proPlanMonthlyPriceEur } from '@botdock/contracts';
+import {
+  botLimitReachedErrorCode,
+  planBotLimits,
+  proPlanMonthlyPriceEur,
+} from '@botdock/contracts';
 import { Prisma } from '@botdock/database';
 import { PrismaService } from '../database/prisma.service.js';
+import { ObjectStorageService } from '../knowledge/object-storage.service.js';
 
 type MessageAggregateRow = {
   botId: string;
@@ -105,7 +110,10 @@ Escalate billing disputes, account access issues, and refund exceptions.`,
 export class BotsService {
   private readonly logger = new Logger(BotsService.name);
 
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(ObjectStorageService) private readonly objectStorage: ObjectStorageService,
+  ) {}
 
   async listBots(organisationId: string, userId: string): Promise<BotsResponse> {
     await this.ensureOrganisationMember(organisationId, userId);
@@ -271,6 +279,35 @@ export class BotsService {
 
     const stats = (await this.computeStats(organisationId, [botId])).get(botId) ?? this.zeroStats();
     return this.toResponse(bot, stats);
+  }
+
+  /**
+   * Permanently deletes a bot. Knowledge, chunks, conversations, usage,
+   * versions, deployments and allowed domains all cascade at the database
+   * level; uploaded knowledge files are removed from object storage first so
+   * they aren't orphaned. Deleting frees a plan slot immediately, and the
+   * bot's embed snippet stops working because its deployment no longer exists.
+   */
+  async deleteBot(organisationId: string, userId: string, botId: string): Promise<void> {
+    await this.ensureOrganisationMember(organisationId, userId);
+
+    const bot = await this.prisma.bot.findFirst({
+      where: { id: botId, organisationId },
+      select: { id: true, documents: { select: { objectStorageKey: true } } },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot was not found.');
+    }
+
+    const objectKeys = bot.documents
+      .map((document) => document.objectStorageKey)
+      .filter((key): key is string => Boolean(key));
+
+    await this.objectStorage.deleteObjects(objectKeys);
+
+    await this.prisma.bot.delete({ where: { id: bot.id } });
+    this.logger.log(`Bot deleted: organisation=${organisationId} bot=${botId} user=${userId}`);
   }
 
   async publishBot(organisationId: string, userId: string, botId: string): Promise<BotResponse> {
@@ -471,35 +508,39 @@ export class BotsService {
   }
 
   /** Batched, real aggregates — never a fabricated fallback number. */
-  private async computeStats(organisationId: string, botIds: string[]): Promise<Map<string, BotStats>> {
+  private async computeStats(
+    organisationId: string,
+    botIds: string[],
+  ): Promise<Map<string, BotStats>> {
     const stats = new Map<string, BotStats>();
     if (botIds.length === 0) {
       return stats;
     }
 
-    const [conversationCounts, costSums, knowledgeGroups, domainCounts, messageAggregates] = await Promise.all([
-      this.prisma.conversation.groupBy({
-        by: ['botId'],
-        where: { organisationId, botId: { in: botIds } },
-        _count: { _all: true },
-      }),
-      this.prisma.usageRecord.groupBy({
-        by: ['botId'],
-        where: { organisationId, botId: { in: botIds } },
-        _sum: { estCostUsd: true },
-      }),
-      this.prisma.knowledgeSource.groupBy({
-        by: ['botId', 'status'],
-        where: { organisationId, botId: { in: botIds } },
-        _count: { _all: true },
-        _sum: { chunkCount: true },
-      }),
-      this.prisma.allowedDomain.groupBy({
-        by: ['botId'],
-        where: { organisationId, botId: { in: botIds } },
-        _count: { _all: true },
-      }),
-      this.prisma.$queryRaw<MessageAggregateRow[]>`
+    const [conversationCounts, costSums, knowledgeGroups, domainCounts, messageAggregates] =
+      await Promise.all([
+        this.prisma.conversation.groupBy({
+          by: ['botId'],
+          where: { organisationId, botId: { in: botIds } },
+          _count: { _all: true },
+        }),
+        this.prisma.usageRecord.groupBy({
+          by: ['botId'],
+          where: { organisationId, botId: { in: botIds } },
+          _sum: { estCostUsd: true },
+        }),
+        this.prisma.knowledgeSource.groupBy({
+          by: ['botId', 'status'],
+          where: { organisationId, botId: { in: botIds } },
+          _count: { _all: true },
+          _sum: { chunkCount: true },
+        }),
+        this.prisma.allowedDomain.groupBy({
+          by: ['botId'],
+          where: { organisationId, botId: { in: botIds } },
+          _count: { _all: true },
+        }),
+        this.prisma.$queryRaw<MessageAggregateRow[]>`
         SELECT
           c."botId" AS "botId",
           COUNT(*)::int AS "messageCount",
@@ -516,7 +557,7 @@ export class BotsService {
         WHERE c."organisationId" = ${organisationId} AND c."botId" IN (${Prisma.join(botIds)})
         GROUP BY c."botId"
       `,
-    ]);
+      ]);
 
     for (const botId of botIds) {
       stats.set(botId, this.zeroStats());

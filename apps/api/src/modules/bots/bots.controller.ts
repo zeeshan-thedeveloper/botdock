@@ -1,5 +1,16 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { Bot, BotsResponse, OrganisationPlanUsage } from '@botdock/contracts';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator.js';
 import { SessionAuthGuard } from '../auth/session-auth.guard.js';
@@ -31,7 +42,9 @@ export class BotsController {
   }
 
   @Post('organisations/:orgId/upgrade-request')
-  @ApiOkResponse({ description: 'Records that the workspace wants more bots than its plan includes.' })
+  @ApiOkResponse({
+    description: 'Records that the workspace wants more bots than its plan includes.',
+  })
   requestUpgrade(
     @Param('orgId') organisationId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -55,6 +68,19 @@ export class BotsController {
     @Body() body: UpdateBotDto,
   ): Promise<Bot> {
     return this.botsService.updateBot(organisationId, user.id, botId, body);
+  }
+
+  @Delete('organisations/:orgId/bots/:id')
+  @HttpCode(204)
+  @ApiNoContentResponse({
+    description: 'Permanently deletes the bot and everything attached to it.',
+  })
+  deleteBot(
+    @Param('orgId') organisationId: string,
+    @Param('id') botId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.botsService.deleteBot(organisationId, user.id, botId);
   }
 
   @Post('organisations/:orgId/bots/:id/publish')
