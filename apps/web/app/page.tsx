@@ -243,10 +243,35 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-border px-6 py-8">
+        <div className="mx-auto mb-6 flex max-w-6xl flex-col gap-3 border-b border-border pb-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-xl">
+            <p className="text-sm font-semibold text-foreground">About the maker</p>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              BotDock is designed and built by Zeeshan Ahmed, a full-stack engineer building AI
+              products: RAG systems, LLM applications, and agentic AI development workflows.
+            </p>
+          </div>
+          <a
+            href="https://zeeshanahmed.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex w-fit shrink-0 items-center rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground transition hover:border-primary/50 hover:bg-muted"
+          >
+            View portfolio — zeeshanahmed.app ↗
+          </a>
+        </div>
         <div className="mx-auto flex max-w-6xl items-center gap-2">
           <BrandMark className="size-6 text-foreground" />
           <span className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} BotDock
+            © {new Date().getFullYear()} BotDock · Built by{' '}
+            <a
+              href="https://zeeshanahmed.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Zeeshan Ahmed
+            </a>
           </span>
           <nav className="ml-auto flex gap-4 text-sm text-muted-foreground">
             <Link href="/privacy" className="hover:text-foreground">
