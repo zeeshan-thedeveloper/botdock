@@ -38,14 +38,12 @@ BotDock is a production RAG system, not a wrapper around a chat endpoint. The AI
 - **Multi-tenant BYOK** — each organisation's own OpenAI key (AES-256-GCM encrypted at rest) pays for both chat and embeddings; a revoked key fails immediately, even for already-published bots.
 - **Safe failure modes** — raw provider errors are never forwarded to visitors, the public widget never sees internals, and cancelled turns don't leave misleading usage records.
 
-### Built With Agentic AI Development
+### Engineering Workflow
 
-BotDock was developed with an agent-driven engineering workflow using Claude Code:
-
-- Work is broken into small, spec'd tasks, each implemented on its own branch by an AI coding agent against a written specification.
+- Work is broken into small, spec'd tasks, each implemented on its own branch against a written specification.
 - Every change goes through a pull request gated by CI (lint, typecheck, tests, build) before it can merge.
 - Features are verified live, end to end, not just unit-tested, before they're marked done.
-- Architecture decisions and docs (`docs/architecture/`, `docs/decisions/`) are kept current so both humans and agents work from the same source of truth.
+- Architecture decisions and docs (`docs/architecture/`, `docs/decisions/`) are kept current as the single source of truth.
 
 ## Main Product Flow
 
