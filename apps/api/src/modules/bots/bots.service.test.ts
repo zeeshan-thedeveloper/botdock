@@ -12,6 +12,7 @@ function createPrismaMock() {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn().mockResolvedValue({}),
     },
     botVersion: {
       findFirst: vi.fn(),
@@ -71,10 +72,12 @@ const zeroStats = {
 describe('BotsService', () => {
   let prisma: ReturnType<typeof createPrismaMock>;
   let service: BotsService;
+  let objectStorage: { deleteObjects: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new BotsService(prisma as never);
+    objectStorage = { deleteObjects: vi.fn().mockResolvedValue(undefined) };
+    service = new BotsService(prisma as never, objectStorage as never);
   });
 
   it('lists bots with model configuration and active credential metadata', async () => {
@@ -420,7 +423,9 @@ describe('BotsService', () => {
     it('refuses a third bot on the Free plan with a machine-readable code', async () => {
       prisma.bot.count.mockResolvedValue(2);
 
-      const error = await service.createBot('user-1', createInput).catch((caught: unknown) => caught);
+      const error = await service
+        .createBot('user-1', createInput)
+        .catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(ForbiddenException);
       expect((error as ForbiddenException).getResponse()).toMatchObject({
@@ -446,10 +451,14 @@ describe('BotsService', () => {
     it('allows up to ten bots on the Pro plan', async () => {
       prisma.organisation.findUnique.mockResolvedValue({ plan: 'PRO' });
       prisma.bot.count.mockResolvedValue(9);
-      await expect(service.createBot('user-1', createInput)).resolves.toMatchObject({ id: 'bot-3' });
+      await expect(service.createBot('user-1', createInput)).resolves.toMatchObject({
+        id: 'bot-3',
+      });
 
       prisma.bot.count.mockResolvedValue(10);
-      await expect(service.createBot('user-1', createInput)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.createBot('user-1', createInput)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('reports plan usage to workspace members only', async () => {
@@ -462,7 +471,9 @@ describe('BotsService', () => {
       });
 
       prisma.organisationMember.findUnique.mockResolvedValue(null);
-      await expect(service.getPlanUsage('org-1', 'user-2')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.getPlanUsage('org-1', 'user-2')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
 
     it('records one upgrade request per workspace and reports when it was made', async () => {
@@ -757,6 +768,44 @@ describe('BotsService', () => {
         NotFoundException,
       );
       expect(prisma.botVersion.create).not.toHaveBeenCalled();
+    });
+  });
+  describe('deleteBot', () => {
+    beforeEach(() => {
+      prisma.organisationMember.findUnique.mockResolvedValue({ id: 'member-1' });
+    });
+
+    it('removes uploaded knowledge files and deletes the bot', async () => {
+      prisma.bot.findFirst.mockResolvedValue({
+        id: 'bot-1',
+        documents: [{ objectStorageKey: 'org-1/bot-1/a.txt' }, { objectStorageKey: null }],
+      });
+
+      await service.deleteBot('org-1', 'user-1', 'bot-1');
+
+      expect(prisma.bot.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'bot-1', organisationId: 'org-1' } }),
+      );
+      expect(objectStorage.deleteObjects).toHaveBeenCalledWith(['org-1/bot-1/a.txt']);
+      expect(prisma.bot.delete).toHaveBeenCalledWith({ where: { id: 'bot-1' } });
+    });
+
+    it('throws NotFoundException for a bot outside the tenant scope', async () => {
+      prisma.bot.findFirst.mockResolvedValue(null);
+
+      await expect(service.deleteBot('org-1', 'user-1', 'bot-other')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.bot.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses non-members', async () => {
+      prisma.organisationMember.findUnique.mockResolvedValue(null);
+
+      await expect(service.deleteBot('org-1', 'user-1', 'bot-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.bot.delete).not.toHaveBeenCalled();
     });
   });
 });

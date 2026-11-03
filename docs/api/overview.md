@@ -20,7 +20,11 @@ check) before touching any data.
 - **Bots** (`/organisations/:orgId/bots`) — list, create, update (draft
   config: identity, instructions, model, appearance, safety), and
   `POST /organisations/:orgId/bots/:id/publish` (snapshots the draft into
-  an immutable `BotVersion` and upserts the `PRODUCTION` `BotDeployment`).
+  an immutable `BotVersion` and upserts the `PRODUCTION` `BotDeployment`),
+  and `DELETE /organisations/:orgId/bots/:id` (permanent; cascades to
+  knowledge, chunks, conversations, usage, versions, deployments and
+  allowed domains, removes uploaded files from object storage, and frees
+  the plan slot).
 - **Provider credentials** (`/organisations/:orgId/provider-credentials`)
   — BYOK: list, create, `POST :id/validate` (live-checks the key against
   the provider), and delete a tenant's own OpenAI key (the dashboard

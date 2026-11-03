@@ -4466,6 +4466,99 @@ function PublishBotModal({
   );
 }
 
+function DeleteBotModal({
+  botName,
+  isDeleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  botName: string;
+  isDeleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState('');
+  const isConfirmed = confirmation.trim() === botName.trim();
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 px-4 backdrop-blur-sm"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-bot-title"
+        className="w-full max-w-md rounded-lg border border-danger/40 bg-surface-raised p-5 shadow-surface-md"
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-danger/40 bg-danger-muted">
+            <TriangleAlert className="size-5 text-danger" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2
+              id="delete-bot-title"
+              className="break-words text-lg font-semibold text-foreground [overflow-wrap:anywhere]"
+            >
+              Delete &ldquo;{botName}&rdquo;?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              This permanently deletes the bot with its knowledge sources, conversations, published
+              versions, and allowed domains. Any embedded widget for this bot stops working. This
+              cannot be undone.
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="mt-4 grid gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (isConfirmed && !isDeleting) onConfirm();
+          }}
+        >
+          <label htmlFor="delete-bot-confirmation" className="text-sm text-muted-foreground">
+            Type <span className="font-semibold text-foreground">{botName}</span> to confirm.
+          </label>
+          <TextInput
+            id="delete-bot-confirmation"
+            value={confirmation}
+            autoComplete="off"
+            autoFocus
+            disabled={isDeleting}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+          {error ? (
+            <p className="break-words text-sm text-danger [overflow-wrap:anywhere]">{error}</p>
+          ) : null}
+
+          <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              disabled={isDeleting}
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="danger" size="md" disabled={!isConfirmed || isDeleting}>
+              {isDeleting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Trash2 className="size-4" aria-hidden="true" />
+              )}
+              Delete bot
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function BotDetailScreen({
   activeTab,
   activeConfigurationPanel,
@@ -4474,6 +4567,7 @@ function BotDetailScreen({
   onTabChange,
   onConfigurationPanelChange,
   onBotUpdated,
+  onBotDeleted,
   onOpenModelProviders,
 }: {
   activeTab: BotDetailTab;
@@ -4483,6 +4577,7 @@ function BotDetailScreen({
   onTabChange: (tab: BotDetailTab) => void;
   onConfigurationPanelChange: (panel: BotConfigurationPanelId) => void;
   onBotUpdated: (bot: BotRecord) => void;
+  onBotDeleted: (botId: string) => void;
   onOpenModelProviders: () => void;
 }) {
   const apiBaseUrl = useMemo(getApiBaseUrl, []);
@@ -4490,6 +4585,36 @@ function BotDetailScreen({
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    if (!workspaceOrganisationId.trim()) {
+      setDeleteError('Deleting a bot needs a configured workspace organisation id.');
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(
+        new URL(`/organisations/${workspaceOrganisationId}/bots/${bot.id}`, apiBaseUrl),
+        { method: 'DELETE', credentials: 'include' },
+      );
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setIsDeleteModalOpen(false);
+      onBotDeleted(bot.id);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete this bot.');
+      setIsDeleting(false);
+    }
+  }
 
   async function handlePublish() {
     if (!workspaceOrganisationId.trim()) {
@@ -4563,6 +4688,18 @@ function BotDetailScreen({
           </div>
 
           <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setDeleteError(null);
+                setIsDeleteModalOpen(true);
+              }}
+              className="text-danger hover:border-danger/50"
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              Delete
+            </Button>
             <Button size="md" onClick={() => setIsPublishModalOpen(true)}>
               <Rocket className="size-4" aria-hidden="true" />
               Publish
@@ -4609,6 +4746,19 @@ function BotDetailScreen({
             setPublishError(null);
           }}
           onConfirm={() => void handlePublish()}
+        />
+      ) : null}
+
+      {isDeleteModalOpen ? (
+        <DeleteBotModal
+          botName={bot.name}
+          isDeleting={isDeleting}
+          error={deleteError}
+          onCancel={() => {
+            setIsDeleteModalOpen(false);
+            setDeleteError(null);
+          }}
+          onConfirm={() => void handleDelete()}
         />
       ) : null}
     </div>
@@ -6140,6 +6290,11 @@ export function AppShell() {
     });
   }
 
+  function removeBot(botId: string) {
+    setBots((currentBots) => currentBots.filter((bot) => bot.id !== botId));
+    closeBotDetail();
+  }
+
   function openModelProviders() {
     openSection('provider-keys');
     setIsCreateBotOpen(false);
@@ -6404,6 +6559,7 @@ export function AppShell() {
                     onTabChange={changeBotTab}
                     onConfigurationPanelChange={changeBotConfigurationPanel}
                     onBotUpdated={replaceBot}
+                    onBotDeleted={removeBot}
                     onOpenModelProviders={openModelProviders}
                   />
                 ) : activeItemId === 'overview' ? (

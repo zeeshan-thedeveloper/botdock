@@ -21,6 +21,6 @@ import { RetrievalService } from './retrieval.service.js';
     RetrievalService,
     SessionAuthGuard,
   ],
-  exports: [RetrievalService],
+  exports: [RetrievalService, ObjectStorageService],
 })
 export class KnowledgeModule {}
