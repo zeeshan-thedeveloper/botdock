@@ -2,6 +2,8 @@
 
 BotDock is a multi-tenant platform for configuring, publishing, embedding, and monitoring AI-powered chatbots.
 
+<img width="1470" height="845" alt="image" src="https://github.com/user-attachments/assets/9c943c4e-d395-404e-8fb7-03c1b46ff6a7" />
+
 ## Problem
 
 Teams need chatbot infrastructure that behaves like a product platform rather than a one-off OpenAI demo. BotDock is built around tenant isolation, bring-your-own-key (BYOK) model billing, versioned publishing, embeddable runtime delivery, retrieval-grounded responses, streaming chat, and conversation inspection.
